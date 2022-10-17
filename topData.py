@@ -1,0 +1,40 @@
+from collections import OrderedDict
+
+
+class topData:
+    def __init__(self, max_size=10, min_detection=24):
+        self.data = OrderedDict()
+        self.max_size = max_size
+        self.min_detection = min_detection
+
+    def add(self, score, data):
+        from centroidtracker import CentroidTracker
+        if CentroidTracker.is_blur(data, self.min_detection): return
+        if len(self.data) >= self.max_size:
+            self.data = OrderedDict(sorted(self.data.items(), reverse=True))
+            if list(self.data.keys())[-1] < score:
+                # print("min:", list(self.data.keys())[-1], "max:", list(self.data.keys())[0])
+                self.data.popitem()
+
+            else: return
+        self.data.update({score: data})
+
+    def clear(self):
+        self.data = OrderedDict()
+
+    def lowest(self):
+        if self.data.keys():
+            return list(self.data.keys())[-1]
+        else: return 0
+
+    def highest(self):
+        if self.data.keys():
+            return list(self.data.keys())[0]
+        else: return 0
+
+    def is_full(self):
+        return len(self.data) == self.max_size
+
+    def get(self):
+        return list(self.data.values())
+

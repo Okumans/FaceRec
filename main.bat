@@ -1,0 +1,1 @@
+python "C:\general\Science_project\Science_project_cp39\main.py" %*
