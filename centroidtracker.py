@@ -5,27 +5,32 @@ import topData
 import numpy as np
 import general
 from general import log, Color
+from copy import deepcopy
 import cv2
 import ray
 from recognition import Recognition
 
 
 class CentroidTracker:
-    def __init__(self, maxDisappeared=10, minFaceConfidence=.85, minFaceBlur=100, faceCheckAmount=10):
+    def __init__(self, faceRecPath, maxDisappeared=10, minFaceConfidence=.85, minFaceBlur=100, faceCheckAmount=10):
         self.nextObjectID = 0
         self.objects = OrderedDict()
+        self.objects_ID = set()
         self.objects_data = OrderedDict()
         self.disappeared = OrderedDict()
-        self.recognizer = Recognition(r"C:\general\Science_project\Science_project_cp39\\resources")
+        self.recognizer = Recognition(faceRecPath)
         self.objects_names = general.rayDict.remote()
         self.is_checked = general.rayDict.remote()
         self.maxDisappeared = maxDisappeared
         self.minFaceConfidence = minFaceConfidence
         self.minFaceBlur = minFaceBlur
         self.faceCheckAmount = faceCheckAmount
+        self.last_deregister = general.rayDict.remote()
+        self.recognition_progress = general.rayDict.remote()
 
     def register(self, centroid, data):
         self.objects[self.nextObjectID] = centroid
+        self.objects_ID.add(self.nextObjectID)
         self.objects_data[self.nextObjectID] = topData.topData(min_detection=self.minFaceBlur, max_size=self.faceCheckAmount)
         self.objects_names.set.remote(self.nextObjectID, "UNKNOWN")
         self.is_checked.set.remote(self.nextObjectID, False)
@@ -36,8 +41,11 @@ class CentroidTracker:
     @ray.remote
     def start_recognition(self, objectID):  # version slow [for multiple face at same time]
         names = []
+        object_amount = len(self.objects_data[objectID].get())
         for j, i in enumerate(self.objects_data[objectID].get()):
             names.append(self.recognizer.recognition(i))
+            self.recognition_progress.set.remote(objectID, j/object_amount)
+            # print("is running / ", j/object_amount)
         most_common = general.Most_Common(names)
 
         if most_common is None:
@@ -51,46 +59,48 @@ class CentroidTracker:
             self.is_checked.set.remote(objectID, True)
             self.objects_names.set.remote(objectID, most_common)
 
-    @ray.remote
-    def __recognition(self, objectData):  # recognition worker for fast recognition method
-        return self.recognizer.recognition(objectData)
-
-    @ray.remote
-    def _start_recognition(self, objectID):
-        names = []
-        for j, i in enumerate(self.objects_data[objectID].get()):
-            names.append(self.__recognition.remote(self, i))
-
-        names = ray.get(names)
-        most_common = general.Most_Common(names)
-        print(names)
-        print(most_common)
-        if most_common is None:
-            self.is_checked.set.remote(objectID, False)
-            self.objects_names.set.remote(objectID, "CHECKED_UNKNOWN")
-        elif most_common is False:
-            self.is_checked.set.remote(objectID, False)
-            self.objects_names.set.remote(objectID, "CHECKED_UNKNOWN")
-        else:
-            self.is_checked.set.remote(objectID, True)
-            self.objects_names.set.remote(objectID, most_common)
+    """    @ray.remote
+        def __recognition(self, objectData):  # recognition worker for fast recognition method
+            return self.recognizer.recognition(objectData)
+    
+        @ray.remote
+        def _start_recognition(self, objectID):
+            names = []
+            for j, i in enumerate(self.objects_data[objectID].get()):
+                names.append(self.__recognition.remote(self, i))
+    
+            names = ray.get(names)
+            most_common = general.Most_Common(names)
+            print(names)
+            print(most_common)
+            if most_common is None:
+                self.is_checked.set.remote(objectID, False)
+                self.objects_names.set.remote(objectID, "CHECKED_UNKNOWN")
+            elif most_common is False:
+                self.is_checked.set.remote(objectID, False)
+                self.objects_names.set.remote(objectID, "CHECKED_UNKNOWN")
+            else:
+                self.is_checked.set.remote(objectID, True)
+                self.objects_names.set.remote(objectID, most_common)"""
 
     @ray.remote
     def start_recognition_final(self, objectID):
         names = []
+        object_amount = len(self.objects_data[objectID].get())
         for j, i in enumerate(self.objects_data[objectID].get()):
             names.append(self.recognizer.recognition(i))
+            self.recognition_progress.set.remote(objectID, j/object_amount)
         most_common = general.Most_Common(names)
-        print(names)
-        print(most_common, "final#####")
+        self.last_deregister.recursive_update.remote({"name": most_common}, objectID)
+        print(most_common, "2323423423423432423423423")
 
     def deregister(self, objectID):
-        self.start_recognition.remote(self, objectID)
+        self.last_deregister.set.remote(objectID, {"img": deepcopy(self.objects_data[objectID])})
         self.start_recognition_final.remote(self, objectID)
-
         del self.objects[objectID]
         del self.objects_data[objectID]
         del self.disappeared[objectID]
+        self.objects_ID.remove(objectID)
         self.objects_names.delete.remote(objectID)
         self.is_checked.delete.remote(objectID)
 
@@ -107,6 +117,7 @@ class CentroidTracker:
 
         if len(rects) == 0:
             a = self.disappeared.copy().keys()
+
             for objectID in a:
                 self.disappeared[objectID] += 1
                 if self.disappeared[objectID] > self.maxDisappeared:
@@ -145,7 +156,7 @@ class CentroidTracker:
 
                 if self.objects_data[objectID].lowest() >= self.minFaceConfidence and self.objects_data[objectID].is_full() and not ray.get(self.is_checked.get.remote(objectID)):
                     self.is_checked.set.remote(objectID, True)
-                    self.objects_names.set.remote(objectID, "IN_PROCESS")
+                    self.objects_names.set.remote(objectID, f"IN_PROCESS")
                     self.start_recognition.remote(self, objectID)
 
                 usedRows.add(row)

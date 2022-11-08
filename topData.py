@@ -19,6 +19,9 @@ class topData:
             else: return
         self.data.update({score: data})
 
+    def amount(self):
+        return len(self.data)
+
     def clear(self):
         self.data = OrderedDict()
 

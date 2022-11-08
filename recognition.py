@@ -44,7 +44,6 @@ class Recognition:
         matches = face_recognition.compare_faces(self.loaded_encodings, new_encoding)
         face_distances = face_recognition.face_distance(self.loaded_encodings, new_encoding)
         best_match_index = np.argmin(face_distances)
-        print("this run")
         name = "UNKNOWN"
         if matches[best_match_index]:
             name = self.loaded_id[best_match_index]

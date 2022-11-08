@@ -1,1 +1,1 @@
-python "C:\general\Science_project\Science_project_cp39\main.py" %*
+py -3.9 "C:\general\Science_project\Science_project_cp39\main.py" %*
