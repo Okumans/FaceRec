@@ -15,16 +15,25 @@ class Logger:
             self.bg = "."
 
         def display(self):
-            percent = self.progress/self.max_process
-            size = percent*self.loading_bar_size
-            print("\r|"+self.fg*ceil(size)+self.bg*(self.loading_bar_size-ceil(size))+"| ["+str(round(percent*100, 2))+"%]", end="")
+            percent = self.progress / self.max_process
+            size = percent * self.loading_bar_size
+            print(
+                "\r|"
+                + self.fg * ceil(size)
+                + self.bg * (self.loading_bar_size - ceil(size))
+                + "| ["
+                + str(round(percent * 100, 2))
+                + "%]",
+                end="",
+            )
 
         def update(self, current_progress):
             self.progress = current_progress
             self.display()
 
     def log(self, message):
-        if self.show: print(message)
+        if self.show:
+            print(message)
 
     def error(self, error_type, error_message):
         self.log(f"ERROR [{error_type}]: {error_message}")

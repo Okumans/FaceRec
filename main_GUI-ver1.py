@@ -1,14 +1,30 @@
 from PyQt5 import QtGui
-from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QScrollArea, \
-    QSpacerItem, QMenu, QMenuBar, QStatusBar, QMainWindow
+from PyQt5.QtWidgets import (
+    QWidget,
+    QApplication,
+    QLabel,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSizePolicy,
+    QScrollArea,
+    QSpacerItem,
+    QMenu,
+    QMenuBar,
+    QStatusBar,
+    QMainWindow,
+)
 from PyQt5.QtGui import QPixmap
 import sys
-import cv2
-from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QSize, QRect, QCoreApplication
-import numpy as np
-import time
-import urllib
-from matplotlib.pyplot import gray
+from PyQt5.QtCore import (
+    pyqtSignal,
+    pyqtSlot,
+    Qt,
+    QThread,
+    QSize,
+    QRect,
+    QCoreApplication,
+)
+
 
 import Logger
 from ShadowRemoval import remove_shadow_grey
@@ -24,8 +40,8 @@ import ray
 import mediapipe as mp
 
 # -----------------setting-----------------
-video_source = 'http://192.168.1.44:8080/video'
-min_detection_confidence = .75
+video_source = 0
+min_detection_confidence = 0.75
 min_faceBlur_detection = 24  # low = blur, high = not blur
 autoBrightnessContrast = True
 autoBrightnessValue = 80  # from 0 - 255
@@ -36,7 +52,7 @@ night_mode_brightness = 40
 sharpness_filter = False
 gray_mode = False
 debug = False
-fps_show = False
+fps_show = True
 cpu_amount = 8
 face_reg_path = r"C:\general\Science_project\Science_project_cp39\\resources"
 
@@ -44,8 +60,13 @@ face_reg_path = r"C:\general\Science_project\Science_project_cp39\\resources"
 ray.init(num_cpus=cpu_amount)
 mp_face_detection = mp.solutions.face_detection
 mp_face_mesh = mp.solutions.face_mesh
-ct = CentroidTracker(face_reg_path, maxDisappeared=face_max_disappeared, minFaceBlur=min_faceBlur_detection,
-                     minFaceConfidence=min_detection_confidence, faceCheckAmount=face_check_amount)
+ct = CentroidTracker(
+    face_reg_path,
+    maxDisappeared=face_max_disappeared,
+    minFaceBlur=min_faceBlur_detection,
+    minFaceConfidence=min_detection_confidence,
+    faceCheckAmount=face_check_amount,
+)
 logger = Logger.Logger()
 (H, W) = (None, None)
 text_color = (0, 255, 255)
@@ -86,9 +107,19 @@ class VideoThread(QThread):
                 image = cv2.flip(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), 1)
                 if general.brightness(image) < night_mode_brightness or gray_mode:
                     image = cv2.cvtColor(remove_shadow_grey(image), cv2.COLOR_GRAY2RGB)  # for night vision
-                    general.putBorderText(image, "NIGHT MODE",
-                                          (W - 100, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, Color.Violet, Color.Black, 2, 3)
-                if sharpness_filter: image = cv2.filter2D(src=image, ddepth=-1, kernel=kernel)
+                    general.putBorderText(
+                        image,
+                        "NIGHT MODE",
+                        (W - 100, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        Color.Violet,
+                        Color.Black,
+                        2,
+                        3,
+                    )
+                if sharpness_filter:
+                    image = cv2.filter2D(src=image, ddepth=-1, kernel=kernel)
                 results = face_detection.process(image)
 
                 # Draw the face detection annotations on the image.
@@ -102,11 +133,19 @@ class VideoThread(QThread):
                         y_max = y_min + detection.location_data.relative_bounding_box.height * H
                         face_height = y_max - y_min
                         box = (x_min, y_min, x_max, y_max)
-                        face_image = face_alignment(deepcopy(image[int(box[1]) - get_from_percent(face_height, 20):
-                                                                   int(box[3]) + get_from_percent(face_height, 20),
-                                                             int(box[0]) - get_from_percent(face_height, 20):
-                                                             int(box[2]) + get_from_percent(face_height, 20)]),
-                                                    face_mesh)
+                        face_image = face_alignment(
+                            deepcopy(
+                                image[
+                                    int(box[1])
+                                    - get_from_percent(face_height, 20) : int(box[3])
+                                    + get_from_percent(face_height, 20),
+                                    int(box[0])
+                                    - get_from_percent(face_height, 20) : int(box[2])
+                                    + get_from_percent(face_height, 20),
+                                ]
+                            ),
+                            face_mesh,
+                        )
                         #  face_image = deepcopy(image[int(box[1]) - get_from_percent(face_height, 20):int(box[3]) + get_from_percent(face_height, 20), int(box[0]) - get_from_percent(face_height, 20):int(box[2]) + get_from_percent(face_height, 20)])
                         rects.append({box: (detection.score[0], face_image)})
 
@@ -115,20 +154,44 @@ class VideoThread(QThread):
                             face_image = general.change_contrast_to(face_image, autoContrastValue)
                         # cv2.imshow("test", cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
 
-                        general.putBorderText(image,
-                                              f"confident: {round(detection.score[0], 2)}% blur {CentroidTracker.is_blur(face_image, min_faceBlur_detection)} ",
-                                              (int(box[0]), int(box[1]) + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                                              (255, 0, 0),
-                                              (0, 0, 0), 2, 3)
+                        general.putBorderText(
+                            image,
+                            f"confident: {round(detection.score[0], 2)}% blur {CentroidTracker.is_blur(face_image, min_faceBlur_detection)} ",
+                            (int(box[0]), int(box[1]) + 18),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (255, 0, 0),
+                            (0, 0, 0),
+                            2,
+                            3,
+                        )
                         if debug:
-                            general.putBorderText(image,
-                                                  f"brightness: {round(general.brightness(face_image), 2)} contrast: {round(general.contrast(face_image), 2)}",
-                                                  (int(box[0]), int(box[1]) + 38), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                                                  (255, 0, 0),
-                                                  (0, 0, 0), 2, 3)
+                            general.putBorderText(
+                                image,
+                                f"brightness: {round(general.brightness(face_image), 2)} contrast: {round(general.contrast(face_image), 2)}",
+                                (int(box[0]), int(box[1]) + 38),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (255, 0, 0),
+                                (0, 0, 0),
+                                2,
+                                3,
+                            )
                         # f"brightness: {round(general.brightness(face_image), 2)} contrast: {round(general.contrast(face_image), 2)}"
-                        cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 0, 0), 5)
-                        cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), text_color, 3)
+                        cv2.rectangle(
+                            image,
+                            (int(box[0]), int(box[1])),
+                            (int(box[2]), int(box[3])),
+                            (0, 0, 0),
+                            5,
+                        )
+                        cv2.rectangle(
+                            image,
+                            (int(box[0]), int(box[1])),
+                            (int(box[2]), int(box[3])),
+                            text_color,
+                            3,
+                        )
 
                 objects = ct.update(rects)
 
@@ -141,12 +204,25 @@ class VideoThread(QThread):
                         print(f"update id {i - 1} -> {i}")
                     else:
                         name = ray.get(ct.objects_names.get.remote(i))
-                        if name not in ["UNKNOWN", "IN_PROCESS", "CHECKED_UNKNOWN", None, "False"] and already_check[i] is False:
+                        if (
+                            name
+                            not in [
+                                "UNKNOWN",
+                                "IN_PROCESS",
+                                "CHECKED_UNKNOWN",
+                                None,
+                                "False",
+                            ]
+                            and already_check[i] is False
+                        ):
                             already_check[i] = True
                             print(f"update id {i - 1} -> {i}: '{name}'")
                             self.change_infobox_message_signal.emit(
-                                info(f"<font size=8><b>{name}</b></font><br><font size=4>{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>",
-                                     ct.objects_data[i].get()[0]))
+                                info(
+                                    f"<font size=8><b>{name}</b></font><br><font size=4>{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>",
+                                    ct.objects_data[i].get()[0],
+                                )
+                            )
 
                 for i in ray.get(ct.last_deregister.get_all.remote()).items():
                     last_objects_names = i[1].get("name")
@@ -154,19 +230,39 @@ class VideoThread(QThread):
                         already_check[i[0]] = True
                         last_objects_data = i[1]["img"].get()[0]
                         self.change_infobox_message_signal.emit(
-                            info(f"<font size=8><b>{last_objects_names}</b></font><br><font size=4>{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>", last_objects_data))
+                            info(
+                                f"<font size=8><b>{last_objects_names}</b></font><br><font size=4>{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>",
+                                last_objects_data,
+                            )
+                        )
 
                 for (objectID, centroid) in objects.items():
                     text = "ID [{}]".format(objectID)
                     # noinspection PyUnresolvedReferences
-                    general.putBorderText(image, text, (centroid[0] - 10, centroid[1] - 20),
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, (0, 0, 0), 2, 3)
-                    general.putBorderText(image,
-                                          general.Most_Common(ray.get(ct.objects_names.get.remote(objectID))) if type(
-                                              ray.get(ct.objects_names.get.remote(objectID))) == list else ray.get(
-                                              ct.objects_names.get.remote(objectID)),
-                                          (centroid[0] - 10, centroid[1] - 40),
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, (0, 0, 0), 2, 3)
+                    general.putBorderText(
+                        image,
+                        text,
+                        (centroid[0] - 10, centroid[1] - 20),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        text_color,
+                        (0, 0, 0),
+                        2,
+                        3,
+                    )
+                    general.putBorderText(
+                        image,
+                        general.Most_Common(ray.get(ct.objects_names.get.remote(objectID)))
+                        if type(ray.get(ct.objects_names.get.remote(objectID))) == list
+                        else ray.get(ct.objects_names.get.remote(objectID)),
+                        (centroid[0] - 10, centroid[1] - 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        text_color,
+                        (0, 0, 0),
+                        2,
+                        3,
+                    )
 
                     cv2.circle(image, (centroid[0], centroid[1]), 4, text_color, -1)
 
@@ -175,7 +271,16 @@ class VideoThread(QThread):
                 fps = int(1 / total_time) if total_time != 0 else -1
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                 if fps_show:
-                    cv2.putText(image, str(fps), (7, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (100, 255, 0), 3, cv2.LINE_AA)
+                    cv2.putText(
+                        image,
+                        str(fps),
+                        (7, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        2,
+                        (100, 255, 0),
+                        3,
+                        cv2.LINE_AA,
+                    )
                 prev_frame_time = new_frame_time
                 self.change_pixmap_signal.emit(image)
         cap.release()
@@ -202,10 +307,12 @@ class App(QWidget):
         self.image_label.setSizePolicy(sizePolicy)
         self.image_label.setMinimumSize(QSize(640, 480))
         self.image_label.setMaximumSize(QSize(640 * 2, 480 * 2))
-        self.image_label.setStyleSheet("color: rgb(240, 240, 240);\n"
-                                       "padding-top: 15px;\n"
-                                       "background-color:rgba(32, 45, 47, 200);\n"
-                                       "border-radius: 10px;")
+        self.image_label.setStyleSheet(
+            "color: rgb(240, 240, 240);\n"
+            "padding-top: 15px;\n"
+            "background-color:rgba(32, 45, 47, 200);\n"
+            "border-radius: 10px;"
+        )
         self.image_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         self.verticalLayout_1 = QVBoxLayout(self.centralwidget)
         self.verticalLayout_1.addWidget(self.image_label)
@@ -220,8 +327,7 @@ class App(QWidget):
         self.scrollArea.setSizePolicy(sizePolicy)
         self.scrollArea.setAcceptDrops(False)
         self.scrollArea.setAutoFillBackground(False)
-        self.scrollArea.setStyleSheet("background-color: rgba(239, 239, 239, 30);\n"
-                                      "border-radius: 10px;")
+        self.scrollArea.setStyleSheet("background-color: rgba(239, 239, 239, 30);\n" "border-radius: 10px;")
         self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scrollArea.setWidgetResizable(True)
@@ -268,11 +374,13 @@ class App(QWidget):
         box.setSizePolicy(sizePolicy)
         box.setMinimumSize(QSize(0, 160))
         box.setMaximumSize(QSize(16777215, 160))
-        box.setStyleSheet("background-color: rgba(138, 209, 235, 120);\n"
-                          "color: rgb(54, 54, 54);\n"
-                          "padding-left: 10px;\n"
-                          "font: bold \"Roboto\";\n"
-                          "border-radius: 10px;")
+        box.setStyleSheet(
+            "background-color: rgba(138, 209, 235, 120);\n"
+            "color: rgb(54, 54, 54);\n"
+            "padding-left: 10px;\n"
+            'font: bold "Roboto";\n'
+            "border-radius: 10px;"
+        )
         box.setText(_translate("MainWindow", message))
         box.setTextFormat(Qt.RichText)
         img_box = QLabel(self.scrollAreaWidgetContents)
@@ -283,9 +391,14 @@ class App(QWidget):
         img_box.setSizePolicy(sizePolicy)
         img_box.setMinimumSize(QSize(160, 160))
         img_box.setMaximumSize(QSize(160, 160))
-        img_box.setStyleSheet("background-color: rgba(178, 249, 255, 120);\n"
-                              "border-radius: 10px;")
-        img_box.setPixmap(self.convert_cv_qt(cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR), img_box.size().width()-20, img_box.size().height()-20))
+        img_box.setStyleSheet("background-color: rgba(178, 249, 255, 120);\n" "border-radius: 10px;")
+        img_box.setPixmap(
+            self.convert_cv_qt(
+                cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR),
+                img_box.size().width() - 20,
+                img_box.size().height() - 20,
+            )
+        )
         img_box.setAlignment(Qt.AlignCenter)
         horizontalLayout.addWidget(img_box)
         horizontalLayout.addWidget(box)
@@ -294,7 +407,11 @@ class App(QWidget):
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
         """Updates the image_label with a new opencv image"""
-        qt_img = self.convert_cv_qt(cv_img, self.image_label.size().width() - 30, self.image_label.size().height() - 30)
+        qt_img = self.convert_cv_qt(
+            cv_img,
+            self.image_label.size().width() - 30,
+            self.image_label.size().height() - 30,
+        )
         self.image_label.setPixmap(qt_img)
 
     @pyqtSlot(info)

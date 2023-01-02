@@ -6,7 +6,7 @@ Author: Jeerabhat Supapinit
 from collections import Counter
 import ray
 from PyQt5.QtWidgets import QProgressBar
-from PyQt5 import QtGui
+from PyQt5 import QtGui, QtMultimedia
 from PyQt5.QtCore import Qt
 from enum import Enum
 import cv2
@@ -15,13 +15,18 @@ from collections import Iterable
 from PIL import Image, ImageStat, ImageEnhance
 import math
 import numpy as np
+from PyQt5 import QtCore, QtGui, QtWidgets
+import ctypes
+import platform
+from PyQt5.QtGui import QPixmap, QFont
+import imutils
+import functools
 
 
 class AnimateProgressBar(QProgressBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMaximum(100)
-
 
 
 def contrast(im_data_rgb):
@@ -41,18 +46,116 @@ def brightness(im_data_rgb):
         return -1
 
 
-def Most_Common(lst):
-    if lst is not None:
-        data = Counter(lst)
-        return data.most_common(1)[0][0]
+def convert_cv_qt(cv_img, width, height):
+    """Convert from an opencv image to QPixmap"""
+    cv_img = imutils.resize(cv_img, width=width)
+    rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+    h, w, ch = rgb_image.shape
+    bytes_per_line = ch * w
+    convert_to_Qt_format = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+    return QPixmap.fromImage(convert_to_Qt_format)
 
 
-def putBorderText(img, text, org, fontFace, fontScale, fg_color, bg_color, thickness, border_thickness=2, lineType=None,
-                  bottomLeftOrigin=None):
-    cv2.putText(img=img, text=str(text), org=org, fontFace=fontFace, fontScale=fontScale, color=bg_color,
-                thickness=thickness + border_thickness, lineType=lineType, bottomLeftOrigin=bottomLeftOrigin)
-    cv2.putText(img=img, text=str(text), org=org, fontFace=fontFace, fontScale=fontScale, color=fg_color,
-                thickness=thickness, lineType=lineType, bottomLeftOrigin=bottomLeftOrigin)
+class Average:
+    def __init__(self, values=None, calculate_amount=None):
+        self.length = 0 if values is None else len(values)
+        self.values = 0 if values is None else sum(values)
+        self.result = 0 if self.length == 0 else self.values / self.length
+        self.calculate_amount = calculate_amount
+
+    def add(self, number):
+        if self.calculate_amount is not None and self.length >= self.calculate_amount:
+            self.length = 0
+            self.values = 0
+
+        self.length += 1
+        self.values += number
+        self.result = self.values / self.length
+
+    def adds(self, numbers: list):
+        if self.calculate_amount is not None and self.length >= self.calculate_amount:
+            self.length = 0
+            self.values = 0
+
+        self.length += len(numbers)
+        self.values += sum(numbers)
+        self.result = self.values / self.length
+
+    def get(self):
+        return self.result
+
+
+def Most_Common(dtc) -> dict:
+    max_con = {"name": "", "confidence": -100000}
+    for i in dtc:
+        avg = sum(dtc[i]) / len(dtc[i])
+        if avg > max_con["confidence"]:
+            max_con["confidence"] = avg
+            max_con["name"] = i
+    return max_con
+
+
+def get_available_cameras():
+    index = 0
+    arr = []
+    while True:
+        cap = cv2.VideoCapture(index)
+        if not cap.read()[0]:
+            break
+        else:
+            arr.append(index)
+        cap.release()
+        index += 1
+    return arr
+
+
+def convertQImageToMat(incomingImage):
+    incomingImage = incomingImage.convertToFormat(4)
+
+    width = incomingImage.width()
+    height = incomingImage.height()
+
+    ptr = incomingImage.bits()
+    ptr.setsize(incomingImage.byteCount())
+    arr = np.array(ptr).reshape(height, width, 4)
+    return arr
+
+
+def putBorderText(
+        img,
+        text,
+        org,
+        fontFace,
+        fontScale,
+        fg_color,
+        bg_color,
+        thickness,
+        border_thickness=2,
+        lineType=None,
+        bottomLeftOrigin=None,
+):
+    cv2.putText(
+        img=img,
+        text=str(text),
+        org=list(map(int, org)),
+        fontFace=fontFace,
+        fontScale=fontScale,
+        color=bg_color,
+        thickness=thickness + border_thickness,
+        lineType=lineType,
+        bottomLeftOrigin=bottomLeftOrigin,
+    )
+    cv2.putText(
+        img=img,
+        text=str(text),
+        org=list(map(int, org)),
+        fontFace=fontFace,
+        fontScale=fontScale,
+        color=fg_color,
+        thickness=thickness,
+        lineType=lineType,
+        bottomLeftOrigin=bottomLeftOrigin,
+    )
 
 
 def colored(r, g, b, text):
@@ -103,14 +206,13 @@ def change_brightness_to(img, value):
 def change_contrast_to(img, value):
     con = contrast(img)
     if con != -1:
-        factor = value/con
+        factor = value / con
         img = np.array(ImageEnhance.Contrast(Image.fromarray(img)).enhance(factor))
     return img
 
 
 @ray.remote
 class rayDict:
-
     def __init__(self, default_value: dict = None):
         self.default_value = {} if default_value is None else default_value
 
@@ -127,7 +229,8 @@ class rayDict:
         self.default_value = {}
 
     def delete(self, key):
-        del self.default_value[key]
+        if self.default_value.get(key) is not None:
+            del self.default_value[key]
 
     def recursive_get(self, *keys):
         result = self.default_value
@@ -144,7 +247,6 @@ class rayDict:
 
 @ray.remote
 class rayList:
-
     def __init__(self, default_value: list = None):
         self.default_value = [] if default_value is None else default_value
 
@@ -203,3 +305,59 @@ def round_Pixmap(pixmap, radius):
     painter.drawRoundedRect(pixmap.rect(), radius, radius)
     painter.end()
     return rounded
+
+
+def make_dpi_aware():
+    if int(platform.release()) >= 8:
+        ctypes.windll.shcore.SetProcessDpiAwareness(True)
+
+
+class PushButton(QtWidgets.QPushButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._animation = QtCore.QVariantAnimation(
+            startValue=QtGui.QColor("#1bb77b"),
+            endValue=QtGui.QColor("#0b1615"),
+            valueChanged=self._on_value_changed,
+            duration=400,
+        )
+        self.font_size = 16
+        self._update_stylesheet(QtGui.QColor("#0b1615"), QtGui.QColor("#637173"))
+        self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+
+    def _on_value_changed(self, color):
+        foreground = (
+            QtGui.QColor("#637173")
+            if self._animation.direction() == QtCore.QAbstractAnimation.Forward
+            else QtGui.QColor("black")
+        )
+        self._update_stylesheet(color, foreground)
+
+    def _update_stylesheet(self, background, foreground):
+        self.setStyleSheet(
+            f"""
+        QPushButton{{
+            background-color: %s;
+            border: none;
+            border-radius: 10px;
+            color: %s;
+            padding: 16px 32px;
+            text-align: center;
+            text-decoration: none;
+            font: bold \"Kanit\";
+            font-size: {self.font_size}px;
+            margin: 4px 2px;
+        }}
+        """
+            % (background.name(), foreground.name())
+        )
+
+    def enterEvent(self, event):
+        self._animation.setDirection(QtCore.QAbstractAnimation.Backward)
+        self._animation.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._animation.setDirection(QtCore.QAbstractAnimation.Forward)
+        self._animation.start()
+        super().leaveEvent(event)
