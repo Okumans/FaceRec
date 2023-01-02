@@ -13,6 +13,7 @@ To run this code, you will need to have the following libraries installed:
 -   OpenCV
 -   PyAutoGUI
 -   mediapipe
+-   firebase_admin
 -   and any other libraries used in the code (see the list of `import` statements at the top of the script for details)
 
 Usage💕
@@ -21,7 +22,7 @@ Usage💕
 To use this code, run the script using the following command:
 
 
-`python main_GUI_ver2.py`
+`python GoodFaceRecognition.py`
 
 This will launch the GUI, which will automatically start the face recognition process using the default settings. You can adjust the settings using the controls provided in the GUI.
 
@@ -31,6 +32,7 @@ Settings⚙️
 The following settings are available for this face recognition system:
 
 -   `video_source`: This specifies the source for the video feed that will be used for face detection and recognition. The default value is `0`, which uses the default camera on your computer.
+-   `resolution`: This specifies the resolution scale of the input. the range of resolution is between `0.001` - `4`. The default value is `1`.
 -   `min_detection_confidence`: This specifies the minimum confidence level required for a face to be detected. The default value is `0.75`.
 -   `min_recognition_confidence`: This specifies the minimum confidence level required for a face to be recognized. The default value is `0.6`.
 -   `min_faceBlur_detection`: This specifies the minimum amount of blur required for a face to be detected. The default value is `24`.
@@ -44,6 +46,7 @@ The following settings are available for this face recognition system:
 -   `gray_mode`: This specifies whether the video feed should be displayed in grayscale. The default value is `False`.
 -   `debug`: This specifies whether debug information should be displayed in the GUI. The default value is `False`.
 -   `fps_show`: This specifies whether the current frame rate should be displayed in the GUI. The default value is `False`.
+-   `average_fps`: This specifies how frame rate should be display as average (easy to look) or normal (harder to look). The default value is `True`.
 -   `cpu_amount`: This specifies the number of CPU cores that should be used for face detection and recognition. The default value is `8`.
 -   `remember_unknown_face`: This specifies whether the system should remember faces that are not recognized. The default value is `True`.
 -   `face_reg_path`: This specifies the path to the directory where face recognition data should be stored. The default value is `r"C:\general\Science_project
