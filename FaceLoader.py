@@ -22,7 +22,9 @@ import pickle
 import numpy as np
 from DataBase import DataBase
 
+
 def edit_image_event(e):
+    global image_filename
     filename = QFileDialog.getOpenFileName(
         MainWindow, "Image file", filter="Image files (*.jpg *.JPG *.png *.jpeg " "*.PNG *.JPEG)"
     )
@@ -30,9 +32,9 @@ def edit_image_event(e):
         return
 
     image = cv2.imread(filename[0])
-    if image is not None and not image.any():
+    if image is None or not image.any():
         image = cv2.imread("image_error.png")
-
+    image_filename = filename[0]
     a.Image_box.setPixmap(
         general.round_Pixmap(
             general.convert_cv_qt(
@@ -54,6 +56,7 @@ def edit_image_event(e):
 
 
 def edit_id_event(e):
+    global IDD
     filename = QFileDialog.getOpenFileName(MainWindow, "Pickle file", filter="Pickle files (*.pkl *.pickle *.PKL)")
 
     if not filename and not filename[0]:
@@ -73,7 +76,36 @@ def edit_id_event(e):
     a.ID.setStyleSheet(
         "background-color: #385c58;\n" "border-radius: 10px;\n" "border-bottom: 2px solid #305752;color:#d3e0df;"
     )
-    a.ID.setText(ID)
+    a.ID.setText(f"{ID} [{data_amount}]")
+    IDD = ID
+
+    db_data = db.get_data(ID)
+    print(ID, db_data)
+    if db_data is not None:
+        a.lineEdit.setText(db_data["realname"] + " " + db_data["surname"])
+        data["nickname"].setText(db_data["nickname"])
+        data["student_id"].setText(str(db_data["student_id"]))
+        data["student_class"].setText(db_data["student_class"])
+        data["class_number"].setText(str(db_data["class_number"]))
+
+    image = db.Storage().get_image(ID)
+    if image.any():
+        a.Image_box.setPixmap(
+            general.round_Pixmap(
+                general.convert_cv_qt(
+                    image,
+                    a.Image_box.size().width() - 10,
+                    a.Image_box.size().height() - 10,
+                ),
+                10,
+            )
+        )
+        avg_color = list(map(int, np.average(np.average(image, axis=0), axis=0)))
+        a.Image_box.setStyleSheet(
+            "border-radius: 10px;\n"
+            "border: 2px solid rgb(202, 229, 229);"
+            f"background-color: rgb({avg_color[2]}, {avg_color[1]}, {avg_color[0]});\n"
+    )
 
 
 def add_input(name, data_name):
@@ -137,29 +169,45 @@ def submit_event(e):
             warning.exec_()
             return
 
-    print(a.ID.text(), realname, surname, data["nickname"], data["student_id"], data["class"], data["class_number"], 0, -1, -1)
-    db.add_data(
-        a.ID.text(),
-        realname=realname,
-        surname=surname,
-        nickname=data["nickname"].text(),
-        student_id=data["student_id"].text(),
-        student_class=data["class"].text(),
-        class_number=data["class_number"].text(),
-        active_days=0,
-        last_checked=-1,
-        graph_info=-1
-    )
+    print(image_filename, a.ID.text(), realname, surname, data["nickname"], data["student_id"], data["student_class"], data["class_number"], 0, 0, [])
+
+    if image_filename:
+        db.Storage().add_image(IDD, image_filename, (80, 80))
+
+    if db.get_data(IDD) is None:
+        db.add_data(
+            IDD,
+            realname=realname,
+            surname=surname,
+            nickname=data["nickname"].text(),
+            student_id=data["student_id"].text(),
+            student_class=data["student_class"].text(),
+            class_number=data["class_number"].text(),
+            active_days=0,
+            last_checked=0,
+            graph_info=[]
+        )
+    else:
+        db.update(
+            IDD,
+            realname=realname,
+            surname=surname,
+            nickname=data["nickname"].text(),
+            student_id=data["student_id"].text(),
+            student_class=data["student_class"].text(),
+            class_number=data["class_number"].text()
+        )
 
 
 if __name__ == "__main__":
     data = {}
-    db = DataBase("Student")
+    db = DataBase("Students")
     font = QFont()
     font.setFamily("Kanit")
     font.setPointSize(18)
     font.setBold(True)
-
+    IDD = ""
+    image_filename = ""
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
@@ -170,7 +218,7 @@ if __name__ == "__main__":
     verticalLayout = QVBoxLayout()
     add_input("ชื่อเล่น\t ", "nickname")
     add_input("รหัสนักเรียน", "student_id")
-    add_input("ห้อง\t ", "class")
+    add_input("ห้อง\t ", "student_class")
     add_input("เลขที่\t ", "class_number")
     a.label.setLayout(verticalLayout)
 
@@ -181,7 +229,6 @@ if __name__ == "__main__":
     submit.setText("เสร็จสิ้น")
     submit.clicked.connect(submit_event)
 
-    a.calendarWidget.hide()
     a.Image_box_2.hide()
     a.Image_box.mousePressEvent = edit_image_event
     a.ID.mousePressEvent = edit_id_event

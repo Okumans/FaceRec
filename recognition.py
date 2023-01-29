@@ -123,7 +123,8 @@ class Recognition:
             try:
                 avg[face].add(face_distances[idx])
             except IndexError:
-                print(len(self.loaded_id), len(self.loaded_encodings))
+                pass
+                # print(len(self.loaded_id), len(self.loaded_encodings))
 
         print(min(avg, key=lambda a: avg[a].get()))
 

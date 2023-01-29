@@ -1,7 +1,9 @@
 import cProfile
+import pickle
 import sys
 import numpy as np
 import time
+from init_name import name_information_init
 import triple_gems
 from copy import deepcopy
 from shutil import move
@@ -48,12 +50,14 @@ from ShadowRemoval import remove_shadow_grey
 from centroidtracker import CentroidTracker
 from FaceAlignment import face_alignment
 from json import dumps, loads
+from DataBase import DataBase
+from attendant_graph import AttendantGraph, Arrange
 
 # -----------------setting-----------------
 setting = dict()
 setting["video_source"] = 0
 setting["min_detection_confidence"] = 0.7
-setting["min_recognition_confidence"] = 0.55
+setting["min_recognition_confidence"] = 0.5
 setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
 setting["autoBrightnessContrast"] = False
 setting["autoBrightnessValue"] = 80  # from 0 to 255
@@ -70,10 +74,10 @@ setting["cpu_amount"] = 16
 setting["resolution"] = 1
 setting["base_resolution"] = (0, 0)
 setting["remember_unknown_face"] = True
-setting["face_reg_path"] = r"C:\general\Science_project\Science_project_cp39\resources"
-setting["name_map_path"] = r"C:\general\Science_project\Science_project_cp39\resources\name_information.json"
+setting["face_reg_path"] = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
+setting["name_map_path"] = setting["face_reg_path"] + r"\name_information.json"
 setting["font"] = "Kanit"
-setting["face_alignment"] = True
+setting["face_alignment"] = False
 use_folder = [setting["face_reg_path"] + r"\unknown", setting["face_reg_path"] + r"\known"]
 
 # -------------global variable--------------
@@ -82,6 +86,8 @@ if __name__ == "__main__":
     for folder_path in use_folder:
         if not exists(folder_path):
             mkdir(folder_path)
+
+    name_information_init(setting["face_reg_path"], setting["name_map_path"])
 
     mp_face_detection = mp.solutions.face_detection
     mp_face_mesh = mp.solutions.face_mesh
@@ -117,6 +123,8 @@ class VideoThread(QThread):
         global H, W
         super().__init__()
         self.video_type = setting["video_source"]
+        self.db = DataBase("Students", sync_with_offline_db=True)
+        self.db.offline_db_folder_path = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
         self.run = True
         self.avg_fps = general.Average([0], calculate_amount=100)
         if self.video_type == "screen":
@@ -305,6 +313,18 @@ class VideoThread(QThread):
                         ):
                             already_check[i] = True
                             ct.last_deregister.delete.remote(i)
+
+                            if name != ct.recognizer.unknown:
+                                data = self.db.get_data(name)
+                                if data is None:
+                                    self.db.add_data(name, *DataBase.default)
+                                    data = self.db.get_data(name)
+
+                                now_time = time.time()
+                                graph_info = data.get("graph_info") if data.get("graph_info") is not None else []
+                                graph_info.append(now_time)
+                                self.db.update(name, last_checked=now_time, graph_info=graph_info)
+
                             self.change_infobox_message_signal.emit(
                                 {
                                     "name": name,
@@ -324,6 +344,18 @@ class VideoThread(QThread):
                             last_objects_data = i[1]["img"].get()[0]
                         except IndexError:
                             last_objects_data = image_error
+
+                        if last_objects_names not in [False, "UNKNOWN??"]:
+                            data = self.db.get_data(last_objects_names)
+                            if data is None and data:
+                                self.db.add_data(last_objects_names, *DataBase.default)
+                                data = self.db.get_data(last_objects_names)
+
+                            now_time = time.time()
+                            graph_info = data.get("graph_info") if data.get("graph_info") is not None else []
+                            graph_info.append(now_time)
+                            self.db.update(last_objects_names, last_checked=now_time, graph_info=graph_info)
+
                         self.change_infobox_message_signal.emit(
                             {
                                 "name": last_objects_names,
@@ -333,6 +365,7 @@ class VideoThread(QThread):
                                 "progress": 0.9999,
                             }
                         )
+                        print("i gotch you", i[0])
                     elif already_check[i[0]] is False:
                         self.change_infobox_message_signal.emit(
                             {
@@ -437,6 +470,9 @@ class App(QWidget):
         self.spacer = QSpacerItem(10, 10, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.last_progress_ = {}
         self.info_boxes = {}
+        self.info_boxes_ID = []
+        self.db = DataBase("Students", sync_with_offline_db=True)
+        self.db.offline_db_folder_path = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
         parent.setWindowTitle("Qt live label demo")
         parent.resize(1336, 553)
         parent.setStyleSheet("background-color: #0b1615;")
@@ -451,7 +487,7 @@ class App(QWidget):
         sizePolicy.setHeightForWidth(self.image_label.sizePolicy().hasHeightForWidth())
         self.image_label.setSizePolicy(sizePolicy)
         self.image_label.setMinimumSize(QSize(640, 480))
-        self.image_label.setMaximumSize(QSize(640 * 2, 480 * 2))
+        self.image_label.setMaximumSize(QSize(640 * 3, 480 * 3))
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
             "padding-top: 15px;\n"
@@ -519,18 +555,9 @@ class App(QWidget):
 
     def info_box_popup(self, ID: int, box: QLabel, cv_image: np.ndarray):
         dlg = ui_popup2.Ui_Dialog(self)
-        dlg.Image_box.setPixmap(
-            general.round_Pixmap(
-                general.convert_cv_qt(
-                    cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR),
-                    dlg.Image_box.size().width() - 10,
-                    dlg.Image_box.size().height() - 10,
-                ),
-                10,
-            )
-        )
 
         avg_color = list(map(int, np.average(np.average(cv_image, axis=0), axis=0)))
+
         dlg.Image_box.setStyleSheet(
             "border-radius: 10px;\n"
             "border: 2px solid rgb(202, 229, 229);"
@@ -541,15 +568,53 @@ class App(QWidget):
         data = [*data[0].split(": "), *data[1].split(" ")]
         name = data[0]
         dlg.name = name
-        dat: str = data[2]
+        date_: str = data[2]
         time_: str = data[3]
         dlg.lineEdit.setText(name)
 
         try:
-            IDD: str = list(ct.recognizer.name_map.keys())[list(ct.recognizer.name_map.values()).index(name)]
+            IDD: str = self.info_boxes_ID[ID]
         except ValueError:
             IDD = name
             ct.recognizer.name_map[IDD] = name
+
+        loaded_image = self.db.Storage().get_image(IDD)
+        if loaded_image is not None and loaded_image is not False and loaded_image.any():
+            image = loaded_image
+        else:
+            image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+
+        dlg.Image_box.setPixmap(
+            general.round_Pixmap(
+                general.convert_cv_qt(
+                    image,
+                    dlg.Image_box.size().width() - 10,
+                    dlg.Image_box.size().height() - 10,
+                ),
+                10,
+            )
+        )
+
+        raw_info_data = self.db.get_data(IDD)
+        if raw_info_data is not None:
+            info_data_graph_info = raw_info_data.get("graph_info")
+            data_x, data_y = AttendantGraph(today=datetime.today()).load_floats(info_data_graph_info).data_in_week()
+            dlg.plot_graph(data_x, data_y)
+            raw_info_data_except_graph_info = {}
+            key_queue = ["realname", "surname", "nickname", "student_id", "student_class", "class_number",
+                         "active_days", "last_checked"]
+            for key in key_queue:
+                value = raw_info_data[key]
+                if key != "graph_info":
+                    if key == "last_checked":
+                        value = datetime.fromtimestamp(value).strftime("%d %b %Y %X")
+                    elif key == "active_days":
+                        value = len(
+                            Arrange(AttendantGraph().load_floats(info_data_graph_info).dates).arrange_in_all_as_day())
+                    raw_info_data_except_graph_info[key] = value
+
+            print(raw_info_data_except_graph_info)
+            dlg.add_data(raw_info_data_except_graph_info)
 
         dlg.ID.setText(IDD)
         dlg.exec()
@@ -564,15 +629,41 @@ class App(QWidget):
             else:
                 information = {}
 
+            IDD_old = IDD
             if IDD.startswith("unknown:"):
                 del information[IDD]
                 del ct.recognizer.name_map[IDD]
-                IDD_old = IDD
                 IDD = IDD.lstrip("unknown:")
                 for index, load_id_id in enumerate(ct.recognizer.loaded_id):
                     if load_id_id == IDD_old:
                         ct.recognizer.loaded_id[index] = IDD
+
+                face_data = {}
+                with open(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), "rb") as file:
+                    face_data = pickle.loads(file.read())
+                    face_data["id"] = IDD
+
+                print(face_data)
+                with open(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), "wb") as file:
+                    file.write(pickle.dumps(face_data))
+
                 move(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), ct.faceRecPath + r"\known\{}.pkl".format(IDD))
+
+                if self.db.get_data(IDD_old) is not None:
+                    db_data = self.db.get_data(IDD_old)
+                    self.db.delete(IDD_old)
+                    self.db.add_data(IDD,
+                                     realname=db_data.get("realname", ""),
+                                     surname=db_data.get("surname", ""),
+                                     nickname=db_data.get("nickname", ""),
+                                     student_id=db_data.get("student_id", 0),
+                                     student_class=db_data.get("student_class", ""),
+                                     class_number=db_data.get("class_number", 0),
+                                     active_days=db_data.get("active_days", 0),
+                                     last_checked=db_data.get("last_checked", 0),
+                                     graph_info=db_data.get("graph_info", []),
+                                     check_name=dlg.name
+                                     )
 
             information[IDD] = dlg.name
             with open(ct.recognizer.name_map_path, "w") as file:
@@ -580,6 +671,12 @@ class App(QWidget):
                 if dump_information:
                     file.write(dump_information)
                     ct.recognizer.name_map[IDD] = dlg.name
+
+            for i in range(ID + 1):
+                if self.info_boxes_ID[i] == IDD or self.info_boxes_ID[i] == IDD_old:
+                    textbox: QLabel = self.scrollAreaWidgetContents.children()[((i + 1) * 2) - 1]
+                    textbox.setText(
+                        f"<font size=8><b>{dlg.name}: {ID}</b></font><br><font size=4>{date_} {time_}</font>")
 
     def new_info_box(self, message, cv_image, ID):
         _translate = QCoreApplication.translate
@@ -647,8 +744,8 @@ class App(QWidget):
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
             "padding-top: 15px;\n"
-            f"background: qlineargradient( x1:0 y1:0, x2:0 y2:1, stop:0 rgb({avg_color_top[0]}, {avg_color_top[1]}, {avg_color_top[2]}),"
-            f"stop:.5 rgb({avg_color_bottom[0]}, {avg_color_bottom[1]}, {avg_color_bottom[2]}), stop:.9 rgba( "
+            f"background: qlineargradient( x1:0 y1:0, x2:0 y2:1, stop:0 rgb({avg_color_top[2]}, {avg_color_top[1]}, {avg_color_top[0]}),"
+            f"stop:.5 rgb({avg_color_bottom[2]}, {avg_color_bottom[1]}, {avg_color_bottom[0]}), stop:.9 rgba( "
             "255, 255, 255, 0)); "
             "border-radius: 10px;"
         )
@@ -711,6 +808,20 @@ class App(QWidget):
                     animation_imgbox.start()
                     # print("yes i am", progress, self.last_progress_[index], special_state)
                     animation.finished.connect(lambda: textBox.setText(name))
+
+                    if len(self.info_boxes_ID) > int(((index + 1) / 2) - 1):
+                        if self.info_boxes_ID[int(((index + 1) / 2) - 1)] is not False:
+                            load_image = self.db.Storage().get_image(self.info_boxes_ID[int(((index + 1) / 2) - 1)])
+                            if load_image is not None and load_image is not False and load_image.any():
+                                pixmap = general.convert_cv_qt(
+                                    load_image,  # cv2.cvtColor(load_image, cv2.COLOR_BGR2RGB),
+                                    imageBox.size().width() - 10,
+                                    imageBox.size().height() - 10,
+                                )
+                                print(imageBox.size().width(), imageBox.size().height())
+                                rounded = general.round_Pixmap(pixmap, 10)
+                                imageBox.setPixmap(rounded)
+
             animation.start()
 
         elif progress < 0.9999:  # update status of people (not finished; update the progress bar)
@@ -741,7 +852,8 @@ class App(QWidget):
             self.info_boxes[ID] = True
             self.verticalLayout.removeItem(self.spacer)
             self.verticalLayout.addLayout(self.new_info_box(f"<font size=8><b>ค้นหาใบหน้า</b></font>", image, ID))
-            self.scrollArea.verticalScrollBar().setValue(self.scrollArea.verticalScrollBar().maximum())
+            if ID % 5 == 0:
+                self.scrollArea.verticalScrollBar().setValue(self.scrollArea.verticalScrollBar().maximum())
             self.verticalLayout.addItem(self.spacer)
 
         else:
@@ -750,12 +862,17 @@ class App(QWidget):
             elif last is True and name is False:
                 message = f'<font size=8><b>FAILED: {ID}</b></font><br><font size=4>{time.strftime("%D/%M %H:%M:%S", time.localtime())}</font>'
                 state = True
+                self.info_boxes_ID.append(False)
             elif name is None:
                 message = f"<font size=8>...</font>"
             else:
                 mapped_name = ct.recognizer.name_map.get(name)
+                self.info_boxes_ID.append(name)
                 if mapped_name is None:
                     mapped_name = name
+
+                if len(mapped_name) < 15:
+                    mapped_name = mapped_name[:15] + "..."
 
                 message = f"<font size=8><b>{mapped_name}: {ID}</b></font><br><font size=4>{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>"
 
@@ -770,7 +887,6 @@ class App(QWidget):
                 # )
                 return
 
-            self.set_infobox_progress(progress, ((ID + 1) * 2) - 1, special_state=state, name=message)
             textbox: QLabel = self.scrollAreaWidgetContents.children()[((ID + 1) * 2) - 1]
             imgbox: QLabel = self.scrollAreaWidgetContents.children()[((ID + 1) * 2)]
 
@@ -783,7 +899,8 @@ class App(QWidget):
                 rounded = general.round_Pixmap(pixmap, 10)
                 imgbox.setPixmap(rounded)
 
-            self.scrollArea.verticalScrollBar().setValue(self.scrollArea.verticalScrollBar().maximum())
+            self.set_infobox_progress(progress, ((ID + 1) * 2) - 1, special_state=state, name=message)
+            # self.scrollArea.verticalScrollBar().setValue(self.scrollArea.verticalScrollBar().maximum())
 
             if last is True:
                 del self.last_progress_[((ID + 1) * 2) - 1]

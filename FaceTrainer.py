@@ -2,6 +2,7 @@
 Filename: FaceTrainer.py
 Author: Jeerabhat Supapinit
 """
+from uuid import uuid4
 
 import cv2
 import mediapipe as mp
@@ -79,7 +80,7 @@ def process_images_and_write_images(data, id):
             result.append(j)
     print(f"Success {success_images}/{max_image_amount} {round((success_images / max_image_amount) * 100, 2)}%")
 
-    with open(f"{id}.pkl", "wb") as f:
+    with open(output_path+f"/{id}.pkl", "wb") as f:
         pickle.dump({"id": id, "data": result}, f)
     cv2.destroyAllWindows()
     print("finished..")
@@ -107,7 +108,8 @@ cores = 8
 
 if __name__ == "__main__":
     ray.init()
-    ID = input("please enter id: ")
+    output_path = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
+    ID = str(uuid4().hex)
     while cap.isOpened():
         success, image = cap.read()
         if not success:
@@ -172,7 +174,7 @@ if __name__ == "__main__":
                     int(box[0]) - get_from_percent(face_height, 20) : int(box[2]) + get_from_percent(face_height, 20),
                 ]
             ),
-            face_mesh,
+            detection,
         )
         # print(detection.score[0])
 
