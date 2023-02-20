@@ -11,7 +11,7 @@ import time
 from trainer import spilt_chunk, resize_by_height, split_chunks_of
 import ray
 from ShadowRemoval import remove_shadow_grey
-from general import direction, putBorderText, change_brightness, get_from_percent
+from general import Direction, putBorderText, change_brightness, get_from_percent
 from topData import topData
 from copy import deepcopy
 import pickle
@@ -93,15 +93,15 @@ face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.55, 
 mp_drawing = mp.solutions.drawing_utils
 drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1, color=(255, 255, 0))
 to_be_encode = {
-    direction.Forward: topData(max_size=20),
-    direction.Left: topData(),
-    direction.Right: topData(),
-    direction.Up: topData(max_size=20),
+    Direction.Forward: topData(max_size=20),
+    Direction.Left: topData(),
+    Direction.Right: topData(),
+    Direction.Up: topData(max_size=20),
 }  # direction.Down: topData()
 (H, W) = (None, None)
 cap = cv2.VideoCapture(0)
-face_direction = direction.Undefined
-to_check_direction = direction.Forward
+face_direction = Direction.Undefined
+to_check_direction = Direction.Forward
 min_detection_score = 0.85
 cores = 8
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         face_3d = []
         face_2d = []
 
-        if to_check_direction == direction.Undefined:
+        if to_check_direction == Direction.Undefined:
             putBorderText(
                 image,
                 "Please wait... (*_*)",
@@ -213,51 +213,51 @@ if __name__ == "__main__":
                 z = angles[2] * 360
 
                 if y < -3:
-                    face_direction = direction.Left
-                    if to_check_direction == direction.Left:
+                    face_direction = Direction.Left
+                    if to_check_direction == Direction.Left:
                         if (
-                            to_be_encode[direction.Left].lowest() >= min_detection_score
-                            and to_be_encode[direction.Left].is_full()
+                            to_be_encode[Direction.Left].lowest() >= min_detection_score
+                            and to_be_encode[Direction.Left].is_full()
                         ):
-                            to_check_direction = direction.Right
+                            to_check_direction = Direction.Right
                         else:
-                            to_be_encode[direction.Left].add_image(detection.score[0], now_frame)
+                            to_be_encode[Direction.Left].add_image(detection.score[0], now_frame)
 
                 elif y > 3:
-                    face_direction = direction.Right
-                    if to_check_direction == direction.Right:
+                    face_direction = Direction.Right
+                    if to_check_direction == Direction.Right:
                         if (
-                            to_be_encode[direction.Right].lowest() >= min_detection_score
-                            and to_be_encode[direction.Right].is_full()
+                            to_be_encode[Direction.Right].lowest() >= min_detection_score
+                            and to_be_encode[Direction.Right].is_full()
                         ):
-                            to_check_direction = direction.Up
+                            to_check_direction = Direction.Up
                         else:
-                            to_be_encode[direction.Right].add_image(detection.score[0], now_frame)
+                            to_be_encode[Direction.Right].add_image(detection.score[0], now_frame)
 
                 elif x < -6:
-                    face_direction = direction.Down
+                    face_direction = Direction.Down
 
                 elif x > 7:
-                    face_direction = direction.Up
-                    if to_check_direction == direction.Up:
+                    face_direction = Direction.Up
+                    if to_check_direction == Direction.Up:
                         if (
-                            to_be_encode[direction.Up].lowest() >= min_detection_score
-                            and to_be_encode[direction.Up].is_full()
+                            to_be_encode[Direction.Up].lowest() >= min_detection_score
+                            and to_be_encode[Direction.Up].is_full()
                         ):
-                            to_check_direction = direction.Undefined
+                            to_check_direction = Direction.Undefined
                         else:
-                            to_be_encode[direction.Up].add_image(detection.score[0], now_frame)
+                            to_be_encode[Direction.Up].add_image(detection.score[0], now_frame)
 
                 else:
-                    face_direction = direction.Forward
-                    if to_check_direction == direction.Forward:
+                    face_direction = Direction.Forward
+                    if to_check_direction == Direction.Forward:
                         if (
-                            to_be_encode[direction.Forward].lowest() >= min_detection_score
-                            and to_be_encode[direction.Forward].is_full()
+                            to_be_encode[Direction.Forward].lowest() >= min_detection_score
+                            and to_be_encode[Direction.Forward].is_full()
                         ):
-                            to_check_direction = direction.Left
+                            to_check_direction = Direction.Left
                         else:
-                            to_be_encode[direction.Forward].add_image(detection.score[0], now_frame)
+                            to_be_encode[Direction.Forward].add_image(detection.score[0], now_frame)
 
                 # print(face_direction, len(to_be_encode[direction.Forward].get()), detection.score[0],
                 # min_detection_score, to_check_direction)

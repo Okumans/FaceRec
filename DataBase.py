@@ -135,7 +135,7 @@ class DataBase:
                 self.ref.child(key).set(values)
             self.ref.child("last_update").set(update_time)
 
-    def get_data(self, ID: str) -> Optional[object]:
+    def get_data(self, ID: str) -> dict:
         try:
             return self.ref.child(ID).get()
         except google_auth_httplib2.exceptions.TransportError:
@@ -166,6 +166,7 @@ class DataBase:
                 off_db["last_update"] = update_time
         else:
             values = self.get_data(ID)
+            print(values)
             for key, value in data.items():
                 values[key] = value
             self.ref.child(ID).update(values)

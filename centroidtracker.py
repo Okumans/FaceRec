@@ -19,15 +19,15 @@ from os.path import exists
 
 class CentroidTracker:
     def __init__(
-        self,
-        faceRecPath,
-        maxDisappeared=10,
-        minFaceConfidence=0.85,
-        minFaceRecConfidence=0.5,
-        minFaceBlur=100,
-        faceCheckAmount=10,
-        remember_unknown_face=False,
-        otherSetting=None,
+            self,
+            faceRecPath,
+            maxDisappeared=10,
+            minFaceConfidence=0.85,
+            minFaceRecConfidence=0.5,
+            minFaceBlur=100,
+            faceCheckAmount=10,
+            remember_unknown_face=False,
+            otherSetting=None,
     ):
         otherSetting = {} if otherSetting is None else otherSetting
         self.nextObjectID = 0
@@ -144,7 +144,6 @@ class CentroidTracker:
             self.last_deregister.recursive_update.remote({"name": most_common["name"]}, objectID)
             print(most_common["name"], "final_result")
 
-
     def deregister(self, objectID):
         self.start_recognition_final.remote(self, objectID)
         self.last_deregister.set.remote(objectID, {"img": deepcopy(self.objects_data[objectID])})
@@ -180,7 +179,7 @@ class CentroidTracker:
                     self.deregister(objectID)
 
             return self.objects
-        # print(time.time()-st, "deregister faces")
+        # print(time.time() - st, "deregister faces")
 
         st = time.time()
         inputCentroids = np.zeros((len(rects), 2), dtype="int")
@@ -189,7 +188,7 @@ class CentroidTracker:
             cX = int((startX + endX) / 2.0)
             cY = int((startY + endY) / 2.0)
             inputCentroids[i] = (cX, cY)
-        # (time.time() - st, "define input centroids")
+        # print(time.time() - st, "define input centroids")
 
         if len(self.objects) == 0:
             st = time.time()
@@ -217,11 +216,32 @@ class CentroidTracker:
             # is_checked_preload_done, _ = ray.wait([self.is_checked.get_all.remote()], timeout=timeout)
             # is_checked_preload = ray.get(is_checked_preload_done[0]) if is_checked_preload_done else {}
 
-            object_names_preload = ray.get(self.objects_names.get_all.remote())
-            is_checked_preload = ray.get(self.is_checked.get_all.remote())
-            unknown_face_encodings = ray.get(self.pre_face_encodings.get_all.remote())
+            # print(time.time() - st, "prepare parameter")
 
-            # print(time.time() - st, "define variable for future use")
+            st = time.time()
+            object_names_preload, object_names_preload_not_done = ray.wait([self.objects_names.get_all.remote()],
+                                                                           timeout=0.02)
+            if object_names_preload_not_done: return self.objects
+            else: object_names_preload = ray.get(object_names_preload)[0]
+
+            # print(time.time() - st, "object name")
+
+            st = time.time()
+            is_checked_preload, is_checked_preload_not_done = ray.wait([self.is_checked.get_all.remote()],
+                                                                       timeout=0.02)
+            if is_checked_preload_not_done: return self.objects
+            else: is_checked_preload = ray.get(is_checked_preload)[0]
+
+            # print(time.time() - st, "is checked ")
+
+            st = time.time()
+            unknown_face_encodings, unknown_face_encodings_not_done = ray.wait([self.pre_face_encodings.get_all.remote()],
+                                                                              timeout=0.02)
+            if unknown_face_encodings_not_done: return self.objects
+            else: unknown_face_encodings = ray.get(unknown_face_encodings)[0]
+
+            # print(time.time() - st, "encoding\n")
+
             st = time.time()
             for index, (row, col) in enumerate(zip(rows, cols)):
                 if row in usedRows or col in usedCols:
@@ -265,8 +285,8 @@ class CentroidTracker:
                             if i not in self.recognizer.loaded_id:
                                 information[i] = f"บุคคลปริศนา [{i.split(':')[1]}]"
                             with open(
-                                self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl",
-                                "wb",
+                                    self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl",
+                                    "wb",
                             ) as file:
                                 pkl_dump({"id": i, "data": unknown_face_encodings[i]}, file)
                                 self.recognizer.loaded_encodings.append(unknown_face_encodings[i][0])
@@ -279,9 +299,9 @@ class CentroidTracker:
                         with open(self.recognizer.name_map_path, "w") as file:
                             file.write(dump_information)
                 if (
-                    self.objects_data[objectID].lowest() >= self.minFaceConfidence
-                    and self.objects_data[objectID].is_full()
-                    and not is_checked_preload.get(objectID)
+                        self.objects_data[objectID].lowest() >= self.minFaceConfidence
+                        and self.objects_data[objectID].is_full()
+                        and not is_checked_preload.get(objectID)
                 ):
                     self.is_checked.set.remote(objectID, True)
                     self.objects_names.set.remote(objectID, f"IN_PROCESS")
@@ -307,5 +327,5 @@ class CentroidTracker:
                 for col in unusedCols:
                     self.register(inputCentroids[col], data[col])
             # print(time.time() - st, "check if any face disappear")
-        # print(time.time()-st_all, "all\n")
+        # print(time.time() - st_all, "all\n")
         return self.objects

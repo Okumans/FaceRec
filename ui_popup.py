@@ -310,7 +310,7 @@ class Ui_Dialog(QDialog):
             else:
                 self.vdoSrc_box.setCurrentIndex(0)
         elif value == self.vdoSrc_box.count() - 2:
-            file = QFileDialog.getOpenFileName(self, "Open a Video File", "", "Video File (*.mp4)")
+            file = QFileDialog.getOpenFileName(self, "Open a Video File", "", "Video File (*.mp4, *.mov)")
             if file[0]:
                 source = file[0]
             else:

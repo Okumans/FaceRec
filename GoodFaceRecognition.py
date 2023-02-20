@@ -3,6 +3,9 @@ import pickle
 import sys
 import numpy as np
 import time
+
+import pandas as pd
+
 from init_name import name_information_init
 import triple_gems
 from copy import deepcopy
@@ -22,6 +25,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QSpacerItem,
     QMainWindow,
+    QBoxLayout
 )
 from PyQt5.QtGui import QPixmap, QFont, QIcon
 from PyQt5.QtCore import (
@@ -51,18 +55,23 @@ from centroidtracker import CentroidTracker
 from FaceAlignment import face_alignment
 from json import dumps, loads
 from DataBase import DataBase
+from contamination_scanner import ContaminationScanner
 from attendant_graph import AttendantGraph, Arrange
+from threading import Thread
+from pandas import DataFrame
+import os.path as path
 
 # -----------------setting-----------------
 setting = dict()
-setting["video_source"] = 0
+setting["project_path"] = "C:\general\Science_project\Science_project_cp39"
+setting["video_source"] = r"C:\general\Science_project\Science_project_cp39\test_sub\load_test\test_5(+1)_3.MOV" #0
 setting["min_detection_confidence"] = 0.7
 setting["min_recognition_confidence"] = 0.5
 setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
 setting["autoBrightnessContrast"] = False
 setting["autoBrightnessValue"] = 80  # from 0 to 255
 setting["autoContrastValue"] = 30  # from 0 to 255
-setting["face_check_amount"] = 3
+setting["face_check_amount"] = 1
 setting["face_max_disappeared"] = 10
 setting["night_mode_brightness"] = 40
 setting["sharpness_filter"] = False
@@ -82,12 +91,15 @@ use_folder = [setting["face_reg_path"] + r"\unknown", setting["face_reg_path"] +
 
 # -------------global variable--------------
 if __name__ == "__main__":
+    print(f"project path set to \"{setting['project_path']}\"")
+
     # check if using folder is available
     for folder_path in use_folder:
         if not exists(folder_path):
             mkdir(folder_path)
 
     name_information_init(setting["face_reg_path"], setting["name_map_path"])
+    ContaminationScanner(setting["face_reg_path"], setting["min_recognition_confidence"]).scan()
 
     mp_face_detection = mp.solutions.face_detection
     mp_face_mesh = mp.solutions.face_mesh
@@ -112,7 +124,8 @@ if __name__ == "__main__":
     now_frame = 0  # cv2 mat
     already_check = {}
     kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    image_error = cv2.imread("image_error.png")
+    image_error = cv2.imread(setting["project_path"] + "/image_error.png")
+    unknown_image = cv2.imread(setting["project_path"] + "/unknown_people.png")
 
 
 class VideoThread(QThread):
@@ -126,12 +139,16 @@ class VideoThread(QThread):
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
         self.run = True
+        self.frame_index = 0
         self.avg_fps = general.Average([0], calculate_amount=100)
         if self.video_type == "screen":
             self.sct = mss()
             self.screen_size = size()
         else:
             self.cap = cv2.VideoCapture(self.video_type)
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
+            self.cap.set(cv2.CAP_PROP_FOURCC, 0x32595559)
+
         (H, W) = (None, None)
 
     def release_cam(self):
@@ -157,6 +174,15 @@ class VideoThread(QThread):
 
                 new_frame_time = time.time()
 
+                if not success or image is None:
+                    # print(setting["frame_rate_graph"])
+                    # print(f"C:/general/Science_project/{path.basename(setting['video_source'])}.csv")
+                    # if not path.exists(f"C:/general/Science_project/{path.basename(setting['video_source'])}.csv"):
+                    #     setting["frame_rate_graph"].to_csv(f"C:/general/Science_project/{path.basename(setting['video_source'])}.csv")
+
+                    logger.log(f"Ignoring empty camera frame.")
+                    continue
+
                 image = cv2.resize(image, (0, 0), fx=setting["resolution"], fy=setting["resolution"])
                 ct.maxDisappeared = setting["face_max_disappeared"]
                 ct.minFaceBlur = setting["min_faceBlur_detection"]
@@ -164,10 +190,6 @@ class VideoThread(QThread):
                 ct.faceCheckAmount = setting["face_check_amount"]
                 ct.recognizer.min_confidence = setting["min_recognition_confidence"]
                 ct.recognizer.remember = setting["remember_unknown_face"]
-
-                if not success or image is None:
-                    logger.log(f"Ignoring empty camera frame.")
-                    continue
 
                 if H is None or W is None:
                     (H, W) = image.shape[:2]
@@ -237,6 +259,8 @@ class VideoThread(QThread):
                         # cv2.COLOR_RGB2BGR))
 
                         if setting["debug"]:
+                            distance: float = ((H * setting["resolution"] * W * setting["resolution"])/518400
+                                               )*(((face_image.shape[1]+face_image.shape[0])/2)/220.39)**(1/-0.949)
                             general.putBorderText(
                                 image,
                                 f"confident: {round(detection.score[0], 2)}% blur {CentroidTracker.is_blur(face_image, setting['min_faceBlur_detection'])} ",
@@ -252,6 +276,18 @@ class VideoThread(QThread):
                                 image,
                                 f"brightness: {round(general.brightness(face_image), 2)} contrast: {round(general.contrast(face_image), 2)}",
                                 (int(box[0]), int(box[1]) + 38),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (255, 0, 0),
+                                (0, 0, 0),
+                                2,
+                                3,
+                            )
+
+                            general.putBorderText(
+                                image,
+                                f"size(WxH): {face_image.shape[1]}, {face_image.shape[0]} distance-predict: {distance}",
+                                (int(box[0]), int(box[1]) + 58),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.5,
                                 (255, 0, 0),
@@ -282,15 +318,26 @@ class VideoThread(QThread):
                 if objects_ids:
                     last_id = max(objects_ids)
 
-                names = ray.get(ct.objects_names.get_all.remote())
-                progresses = ray.get(ct.recognition_progress.get_all.remote())
+                for i in objects_ids:
+                    if i > temp:
+                        already_check[i] = False
+
+                names, names_not_done = ray.wait([ct.objects_names.get_all.remote()], timeout=0.02)
+                if names_not_done:
+                    continue
+
+                progresses, progresses_not_done = ray.wait([ct.recognition_progress.get_all.remote()], timeout=0.02)
+                if progresses_not_done:
+                    continue
+
+                names = ray.get(names)[0]
+                progresses = ray.get(progresses)[0]
 
                 for i in objects_ids:
                     name = names.get(i)
                     progress = progresses.get(i)
-                    if i > temp:
-                        already_check[i] = False
-                    elif name == "IN_PROCESS":
+
+                    if name == "IN_PROCESS":
                         self.change_infobox_message_signal.emit(
                             {
                                 "name": name,
@@ -334,7 +381,12 @@ class VideoThread(QThread):
                                 }
                             )
 
-                for i in ray.get(ct.last_deregister.get_all.remote()).items():
+                last_deregister, last_deregister_not_finish = ray.wait([ct.last_deregister.get_all.remote()],
+                                                                       timeout=0.02)
+                if last_deregister_not_finish:
+                    continue
+
+                for i in ray.get(last_deregister)[0].items():
                     last_objects_names = i[1].get("name")
                     progress = progresses.get(i[0])
                     if last_objects_names is not None and already_check[i[0]] is False:
@@ -345,9 +397,9 @@ class VideoThread(QThread):
                         except IndexError:
                             last_objects_data = image_error
 
-                        if last_objects_names not in [False, "UNKNOWN??"]:
+                        if last_objects_names not in [False, "UNKNOWN??", ""]:
                             data = self.db.get_data(last_objects_names)
-                            if data is None and data:
+                            if data is None:
                                 self.db.add_data(last_objects_names, *DataBase.default)
                                 data = self.db.get_data(last_objects_names)
 
@@ -424,6 +476,7 @@ class VideoThread(QThread):
                     """
 
                 total_time = new_frame_time - prev_frame_time
+                self.frame_index += 1
 
                 if setting["average_fps"]:
                     if total_time < 100:
@@ -431,6 +484,14 @@ class VideoThread(QThread):
                         total_time = self.avg_fps.get()
 
                 fps = int(1 / total_time) if total_time != 0 else -1
+
+                # for load testing
+                # setting["frame_rate_graph"] = DataFrame(columns=["fps"]) if setting.get("frame_rate_graph") is None else setting[
+                #     "frame_rate_graph"]
+                #
+                # if setting["video_source"] != 0:
+                #     setting["frame_rate_graph"] = pd.concat([setting["frame_rate_graph"], DataFrame([fps], columns=["fps"])], ignore_index=True)
+
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                 if setting["fps_show"]:
                     cv2.putText(
@@ -471,6 +532,7 @@ class App(QWidget):
         self.last_progress_ = {}
         self.info_boxes = {}
         self.info_boxes_ID = []
+        self.id_navigation = {}
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
         parent.setWindowTitle("Qt live label demo")
@@ -497,7 +559,7 @@ class App(QWidget):
         )
         self.image_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         self.setting_button = general.PushButton(self.centralwidget)
-        self.setting_button.setIcon(QIcon("setting.png"))
+        self.setting_button.setIcon(QIcon(setting["project_path"] + "/setting.png"))
         self.setting_button.setIconSize(QSize(30, 30))
         self.setting_button.setMaximumSize(QSize(60, 99999999))
         # self.setting_button.setFixedSize(QSize(100, 100))
@@ -527,6 +589,9 @@ class App(QWidget):
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 563, 539))
         self.verticalLayout = QVBoxLayout(self.scrollAreaWidgetContents)
+        self.verticalLayout.addStretch()
+        self.verticalLayout.setDirection(QBoxLayout.BottomToTop)
+
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
         self.horizontalLayout.addWidget(self.scrollArea)
         self.scrollArea.raise_()
@@ -578,22 +643,19 @@ class App(QWidget):
             IDD = name
             ct.recognizer.name_map[IDD] = name
 
-        loaded_image = self.db.Storage().get_image(IDD)
-        if loaded_image is not None and loaded_image is not False and loaded_image.any():
-            image = loaded_image
-        else:
-            image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
-
         dlg.Image_box.setPixmap(
             general.round_Pixmap(
                 general.convert_cv_qt(
-                    image,
+                    general.generate_profile(IDD, image_source=setting["project_path"]+"/unknown_people.png",
+                                             font_path=setting["project_path"]+"/Kanit-Medium.ttf"),
                     dlg.Image_box.size().width() - 10,
                     dlg.Image_box.size().height() - 10,
                 ),
                 10,
             )
         )
+
+        Thread(target=lambda: self.__load_image_passive(imageBox=dlg.Image_box, ID=IDD)).start()
 
         raw_info_data = self.db.get_data(IDD)
         if raw_info_data is not None:
@@ -674,11 +736,11 @@ class App(QWidget):
 
             for i in range(ID + 1):
                 if self.info_boxes_ID[i] == IDD or self.info_boxes_ID[i] == IDD_old:
-                    textbox: QLabel = self.scrollAreaWidgetContents.children()[((i + 1) * 2) - 1]
+                    textbox: QLabel = self.id_navigation[i]["message_box"]
                     textbox.setText(
                         f"<font size=8><b>{dlg.name}: {ID}</b></font><br><font size=4>{date_} {time_}</font>")
 
-    def new_info_box(self, message, cv_image, ID):
+    def new_info_box(self, message, cv_image, ID) -> (QLabel, QLabel, QHBoxLayout):
         _translate = QCoreApplication.translate
         horizontalLayout = QHBoxLayout(self.scrollAreaWidgetContents)
         box = QLabel(self.scrollAreaWidgetContents)
@@ -724,7 +786,7 @@ class App(QWidget):
         horizontalLayout.addWidget(img_box)
         horizontalLayout.addWidget(box)
 
-        return horizontalLayout
+        return img_box, box, horizontalLayout
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
@@ -753,9 +815,29 @@ class App(QWidget):
         rounded = general.round_Pixmap(pixmap, 10)
         self.image_label.setPixmap(rounded)
 
+    def __load_image_passive(self, index: int = None, imageBox: QWidget = None, ID: str = None):
+        if imageBox is None and index is not None:
+            imageBox = self.id_navigation[index]["img_box"]
+            load_image = self.db.Storage().get_image(self.info_boxes_ID[index])
+
+        elif index is None:
+            print(ID, 'dsfsdfsdfsdfsdfsddsfsdf')
+            load_image = self.db.Storage().get_image(ID)
+
+        if not (load_image is not None and load_image is not False and load_image.any()):
+            load_image = unknown_image
+
+        pixmap = general.convert_cv_qt(
+            load_image,  # cv2.cvtColor(load_image, cv2.COLOR_BGR2RGB),
+            imageBox.size().width() - 10,
+            imageBox.size().height() - 10,
+        )
+        rounded = general.round_Pixmap(pixmap, 10)
+        imageBox.setPixmap(rounded)
+
     def set_infobox_progress(self, progress, index, special_state=False, name=None):
-        textBox: QLabel = self.scrollAreaWidgetContents.children()[index]
-        imageBox: QLabel = self.scrollAreaWidgetContents.children()[index + 1]
+        textBox: QLabel = self.id_navigation[index]["message_box"]
+        imageBox: QLabel = self.id_navigation[index]["img_box"]
 
         def _animate(value):
             grad = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop: 0 #1b8c7b, stop: {value} #1bb77b, stop: {value + 0.001} rgb(62, 83, 87), stop: 1 rgb(32, 45, 47)); padding-left: 10px;"
@@ -809,18 +891,9 @@ class App(QWidget):
                     # print("yes i am", progress, self.last_progress_[index], special_state)
                     animation.finished.connect(lambda: textBox.setText(name))
 
-                    if len(self.info_boxes_ID) > int(((index + 1) / 2) - 1):
-                        if self.info_boxes_ID[int(((index + 1) / 2) - 1)] is not False:
-                            load_image = self.db.Storage().get_image(self.info_boxes_ID[int(((index + 1) / 2) - 1)])
-                            if load_image is not None and load_image is not False and load_image.any():
-                                pixmap = general.convert_cv_qt(
-                                    load_image,  # cv2.cvtColor(load_image, cv2.COLOR_BGR2RGB),
-                                    imageBox.size().width() - 10,
-                                    imageBox.size().height() - 10,
-                                )
-                                print(imageBox.size().width(), imageBox.size().height())
-                                rounded = general.round_Pixmap(pixmap, 10)
-                                imageBox.setPixmap(rounded)
+                    if len(self.info_boxes_ID) > index:
+                        if self.info_boxes_ID[index] is not False:
+                            Thread(target=lambda: self.__load_image_passive(index)).start()
 
             animation.start()
 
@@ -851,10 +924,10 @@ class App(QWidget):
         if self.info_boxes.get(ID) is None:
             self.info_boxes[ID] = True
             self.verticalLayout.removeItem(self.spacer)
-            self.verticalLayout.addLayout(self.new_info_box(f"<font size=8><b>ค้นหาใบหน้า</b></font>", image, ID))
-            if ID % 5 == 0:
-                self.scrollArea.verticalScrollBar().setValue(self.scrollArea.verticalScrollBar().maximum())
-            self.verticalLayout.addItem(self.spacer)
+            img_box, message_box, layout = self.new_info_box(f"<font size=8><b>ค้นหาใบหน้า</b></font>", image, ID)
+            self.id_navigation[ID] = {"img_box": img_box, "message_box": message_box}
+            self.verticalLayout.addLayout(layout)
+
 
         else:
             if name == "IN_PROCESS" or name == "__UNKNOWN__":
@@ -876,10 +949,10 @@ class App(QWidget):
 
                 message = f"<font size=8><b>{mapped_name}: {ID}</b></font><br><font size=4>{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>"
 
-            if self.last_progress_.get(((ID + 1) * 2) - 1) is None:
-                self.last_progress_[((ID + 1) * 2) - 1] = 0.001
+            if self.last_progress_.get(ID) is None:
+                self.last_progress_[ID] = 0.001
 
-            if len(self.scrollAreaWidgetContents.children()) <= ((ID + 1) * 2):
+            if len(self.scrollAreaWidgetContents.children()) <= ID:
                 # print(
                 #     len(self.scrollAreaWidgetContents.children()),
                 #     ((ID + 1) * 2),
@@ -887,8 +960,8 @@ class App(QWidget):
                 # )
                 return
 
-            textbox: QLabel = self.scrollAreaWidgetContents.children()[((ID + 1) * 2) - 1]
-            imgbox: QLabel = self.scrollAreaWidgetContents.children()[((ID + 1) * 2)]
+            textbox: QLabel = self.id_navigation[ID]["message_box"]
+            imgbox: QLabel = self.id_navigation[ID]["img_box"]
 
             if image is not None and image.any():
                 pixmap = general.convert_cv_qt(
@@ -899,11 +972,11 @@ class App(QWidget):
                 rounded = general.round_Pixmap(pixmap, 10)
                 imgbox.setPixmap(rounded)
 
-            self.set_infobox_progress(progress, ((ID + 1) * 2) - 1, special_state=state, name=message)
+            self.set_infobox_progress(progress, ID, special_state=state, name=message)
             # self.scrollArea.verticalScrollBar().setValue(self.scrollArea.verticalScrollBar().maximum())
 
             if last is True:
-                del self.last_progress_[((ID + 1) * 2) - 1]
+                del self.last_progress_[ID]
 
 
 if __name__ == "__main__":
