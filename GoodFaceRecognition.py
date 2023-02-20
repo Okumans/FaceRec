@@ -64,7 +64,7 @@ import os.path as path
 # -----------------setting-----------------
 setting = dict()
 setting["project_path"] = "C:\general\Science_project\Science_project_cp39"
-setting["video_source"] = r"C:\general\Science_project\Science_project_cp39\test_sub\load_test\test_5(+1)_3.MOV" #0
+setting["video_source"] = 0
 setting["min_detection_confidence"] = 0.7
 setting["min_recognition_confidence"] = 0.5
 setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
