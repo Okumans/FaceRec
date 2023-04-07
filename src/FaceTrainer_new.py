@@ -53,20 +53,18 @@ ray.init()
 
 
 class VideoFaceTrainer:
-    def __init__(self, ID=None, output_path=None, min_detection_score=None, core=None, num_jitters=20):
+    def __init__(self, ID=None, output_path=None, min_detection_score=None, core=None):
         self.output_path: str = "" if output_path is None else output_path
         self.ID: str = uuid4().hex if ID is None else ID
         self.min_detection_score = 0.85 if min_detection_score is None else min_detection_score
         self.core = 8 if core is None else core
         self.H, self.W = None, None
-        self.num_jitters = num_jitters
 
         mp_face_mesh = mp.solutions.face_mesh
         mp_face_detection = mp.solutions.face_detection
         mp_drawing = mp.solutions.drawing_utils
 
         self.__face_direction: Direction = Direction.Undefined
-        self.__to_check_direction: Direction = Direction.Forward
         self.__cap: cv2.VideoCapture = cv2.VideoCapture(0)
         self.__face_detection: mp_face_detection.FaceDetection = mp_face_detection.FaceDetection(
             min_detection_confidence=0.55, model_selection=0
@@ -75,11 +73,18 @@ class VideoFaceTrainer:
             thickness=1, circle_radius=1, color=(255, 255, 0)
         )
         self.__face_mesh: mp_face_mesh.FaceMesh = mp_face_mesh.FaceMesh()
+        self.__queue: list[Direction] = [
+            Direction((-10, -30, -10), error_rate=(1000, 50, 1000), name="lefty degree"),
+            Direction((10, 0, 10), error_rate=(1000, 200, 1000), name="forwardy degree"),
+            Direction((10, 30, 10), error_rate=(1000, 50, 1000), name="righty degree")
+        ]
+        self.__queue_index = 0
+        self.__to_check_direction: Direction = self.__queue[self.__queue_index]
+        capacity = 20
         self.__to_be_encode: dict[Direction, topData] = {
-            Direction((0, 0, 0), (300, 300, 300)): topData(max_size=20),
-            Direction((10, -45, 10), (10000, 30, 10000)): topData(),
-            Direction((10, 45, 10), (10000, 30, 10000)): topData(),
-            Direction((30, 10, 10), (10000, 30, 10000)): topData(max_size=20),
+            Direction((-10, -30, -10), error_rate=(1000, 20, 1000), name="left degree"): topData(max_size=capacity),
+            Direction((10, 0, 10), error_rate=(1000, 200, 1000), name="forwardy degree"): topData(max_size=capacity*2),
+            Direction((10, 30, 10), error_rate=(1000, 20, 1000), name="righty degree"): topData(max_size=capacity)
         }
 
     def run(self):
@@ -102,26 +107,6 @@ class VideoFaceTrainer:
             face_3d = []
             face_2d = []
             dist_matrix: np.ndarray
-
-            if self.__to_check_direction == Direction.Undefined:
-                putBorderText(
-                    image,
-                    "Please wait... (*_*)",
-                    (int(self.W / 2) - 250, int(self.H / 2)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.5,
-                    (255, 0, 255),
-                    (0, 0, 0),
-                    3,
-                    5,
-                )
-                image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                image = change_brightness(image, -10)
-                cv2.imshow("win", image)
-                cv2.setWindowProperty("win", cv2.WND_PROP_TOPMOST, 1)
-                if cv2.waitKey(5) & 0xFF == 27:
-                    break
-                break
 
             if results_detection.detections is not None:
                 if results_detection.detections[0] is None:
@@ -187,60 +172,33 @@ class VideoFaceTrainer:
                     rmat, jac = cv2.Rodrigues(rot_vec)
                     angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
 
-                    x = angles[0] * 360
-                    y = angles[1] * 360
-                    z = angles[2] * 360
+                    x = angles[0] * 360 * 3.6
+                    y = angles[1] * 360 * 3.6
+                    z = angles[2] * 360 * 3.6
 
-                    if y < -3:
-                        face_direction = Direction.Left
-                        if self.__to_check_direction == Direction.Left:
-                            if (
-                                self.__to_be_encode[Direction.Left].lowest() >= self.min_detection_score
-                                and self.__to_be_encode[Direction.Left].is_full()
-                            ):
-                                self.__to_check_direction = Direction.Right
-                            else:
-                                self.__to_be_encode[Direction.Left].add_image(detection.score[0], now_frame)
+                    face_direction = Direction((x, y, z))
+                    text = ""
+                    if self.__to_check_direction.name.split(" ")[0][-1] == "x":
+                        text = f"Looking {round(face_direction.degree_x, 2)} x"
+                    elif self.__to_check_direction.name.split(" ")[0][-1] == "y":
+                        text = f"Looking {round(face_direction.degree_y, 2)} y"
+                    elif self.__to_check_direction.name.split(" ")[0][-1] == "z":
+                        text = f"Looking {round(face_direction.degree_z, 2)} z"
 
-                    elif y > 3:
-                        face_direction = Direction.Right
-                        if self.__to_check_direction == Direction.Right:
-                            if (
-                                self.__to_be_encode[Direction.Right].lowest() >= self.min_detection_score
-                                and self.__to_be_encode[Direction.Right].is_full()
-                            ):
-                                self.__to_check_direction = Direction.Up
-                            else:
-                                self.__to_be_encode[Direction.Right].add_image(detection.score[0], now_frame)
-
-                    elif x < -6:
-                        face_direction = Direction.Down
-
-                    elif x > 7:
-                        face_direction = Direction.Up
-                        if self.__to_check_direction == Direction.Up:
-                            if (
-                                self.__to_be_encode[Direction.Up].lowest() >= self.min_detection_score
-                                and self.__to_be_encode[Direction.Up].is_full()
-                            ):
-                                self.__to_check_direction = Direction.Undefined
-                            else:
-                                self.__to_be_encode[Direction.Up].add_image(detection.score[0], now_frame)
-
-                    else:
-                        face_direction = Direction.Forward
-                        if self.__to_check_direction == Direction.Forward:
-                            if (
-                                self.__to_be_encode[Direction.Forward].lowest() >= self.min_detection_score
-                                and self.__to_be_encode[Direction.Forward].is_full()
-                            ):
-                                self.__to_check_direction = Direction.Left
-                            else:
-                                self.__to_be_encode[Direction.Forward].add_image(detection.score[0], now_frame)
-
-                    # print(face_direction, len(to_be_encode[direction.Forward].get()), detection.score[0],
-                    # min_detection_score, to_check_direction)
-                    text = f"Looking {face_direction.name}"
+                    # print(self.__to_check_direction.maximum_error())
+                    if self.__to_check_direction.is_same(face_direction):
+                        text = f"Looking {self.__to_check_direction.name}"
+                        if not (
+                            self.__to_be_encode[self.__to_check_direction].is_full()
+                            and self.__to_be_encode[self.__to_check_direction].lowest() >= self.min_detection_score
+                        ):
+                            self.__to_be_encode[self.__to_check_direction].add_image(detection.score[0], now_frame)
+                        else:
+                            self.__queue_index += 1
+                            try:
+                                self.__to_check_direction = self.__queue[self.__queue_index]
+                            except IndexError:
+                                return
 
                     p1 = (int(nose_2d[0]), int(nose_2d[1]))
                     p2 = (int(nose_2d[0] + y * 10), int(nose_2d[1] - x * 10))
@@ -269,33 +227,6 @@ class VideoFaceTrainer:
                         (0, 0, 0),
                         3,
                         4,
-                    )
-                    cv2.putText(
-                        image,
-                        "x: " + str(np.round(x, 2)),
-                        (500, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 0, 255),
-                        2,
-                    )
-                    cv2.putText(
-                        image,
-                        "y: " + str(np.round(y, 2)),
-                        (500, 100),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 0, 255),
-                        2,
-                    )
-                    cv2.putText(
-                        image,
-                        "z: " + str(np.round(z, 2)),
-                        (500, 150),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 0, 255),
-                        2,
                     )
 
                     mp.solutions.drawing_utils.draw_landmarks(

@@ -1,4 +1,5 @@
 import time
+import imutils
 from scipy.spatial import distance as dist
 from collections import OrderedDict
 from src import topData
@@ -8,6 +9,7 @@ import logging
 from copy import deepcopy
 import cv2
 import ray
+from ray.exceptions import GetTimeoutError
 from src.recognition import Recognition
 from uuid import uuid4
 from json import loads, dumps
@@ -15,6 +17,10 @@ from pickle import load as pkl_load
 from pickle import dump as pkl_dump
 from os.path import exists
 from src.FaceAntiSpoofing.demo import demo
+from src.liveness_detection import LivenessDetection
+
+
+RAY_TIMEOUT = 0.005
 
 
 class CentroidTracker:
@@ -47,7 +53,7 @@ class CentroidTracker:
         self.faceCheckAmount = faceCheckAmount
         self.remember_unknown_face = remember_unknown_face
         self.remember_unknown_face_maximum_confidence = 0.48
-        self.liveness_threshold = 0.83
+        self.liveness_threshold = .50
         self.last_deregister = general.rayDict.remote()
         self.recognition_progress = general.rayDict.remote()
         self.pre_face_encodings = general.rayDict.remote()
@@ -74,13 +80,16 @@ class CentroidTracker:
         liveness = general.Average()
         object_amount = len(self.objects_data[objectID].get())
         for j, i in enumerate(self.objects_data[objectID].get()):
+            if not i.any():
+                continue
+            i = imutils.resize(i, width=270)
             (
                 name,
                 recognition_confidence,
             ), face_encodings = self.recognizer.recognition(i)
             if face_encodings is not None:
                 encodings.append(face_encodings)
-                liveness.add(demo(i))
+                liveness.add(LivenessDetection.determine(LivenessDetection().predict(i)))
 
             if names.get(name) is None:
                 names[name] = []
@@ -108,7 +117,7 @@ class CentroidTracker:
                     self.pre_face_encodings.set.remote(most_common["name"], encodings)
                 # check_name = most_common["name"]
             self.is_checked.set.remote(objectID, True)
-            if liveness.get() > self.liveness_threshold:
+            if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
                 check_name = "attacked:" + check_name
             self.objects_names.set.remote(objectID, check_name)
 
@@ -121,13 +130,16 @@ class CentroidTracker:
         if not ray.get(self.is_checked.get.remote(objectID)):
             object_amount = len(self.objects_data[objectID].get())
             for j, i in enumerate(self.objects_data[objectID].get()):
+                if not i.any():
+                    continue
+                i = imutils.resize(i, width=270)
                 (
                     name,
                     recognition_confidence,
                 ), face_encodings = self.recognizer.recognition(i)
                 if face_encodings is not None:
                     encodings.append(face_encodings)
-                    liveness.add(demo(i))
+                    liveness.add(LivenessDetection.determine(LivenessDetection().predict(i)))
                 if names.get(name) is None:
                     names[name] = []
                 names[name].append(recognition_confidence)
@@ -143,18 +155,18 @@ class CentroidTracker:
                     logging.info("face_encoding error")
                     # self.pre_face_encodings.set.remote(self.recognizer.unknown, encodings)
 
-                if liveness.get() > self.liveness_threshold:
+                if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
                     generate_name = "attacked:"+generate_name
                 self.last_deregister.recursive_update.remote({"name": generate_name}, objectID)
                 logging.info(generate_name+"final_result")
             else:
-                if liveness.get() > self.liveness_threshold:
+                if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
                     most_common["name"] = "attacked:"+most_common["name"]
                 self.last_deregister.recursive_update.remote({"name": most_common["name"]}, objectID)
                 logging.info(f"{most_common['name']} final_result")
         else:
             most_common = {"name": ray.get(self.objects_names.get.remote(objectID))}
-            if liveness.get() > self.liveness_threshold:
+            if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
                 most_common["name"] = "attacked:" + most_common["name"]
             self.last_deregister.recursive_update.remote({"name": most_common["name"]}, objectID)
             logging.info(f"{most_common['name']} final_result")
@@ -179,12 +191,9 @@ class CentroidTracker:
                 return not (cv2.Laplacian(cv2_img, cv2.CV_64F).var() >= min_confidence)
 
     def update(self, rects):
-        st_all = time.time()
-
         data = [list(i.values())[0] for i in rects]
         rects = [list(i.keys())[0] for i in rects]
 
-        st = time.time()
         if len(rects) == 0:
             a = self.disappeared.copy().keys()
 
@@ -210,6 +219,7 @@ class CentroidTracker:
             objectIDs = list(self.objects.keys())
             objectCentroids = list(self.objects.values())
 
+
             D = dist.cdist(np.array(objectCentroids), inputCentroids)
             rows = D.min(axis=1).argsort()
             cols = D.argmin(axis=1)[rows]
@@ -217,27 +227,18 @@ class CentroidTracker:
             usedRows = set()
             usedCols = set()
 
-            object_names_preload, object_names_preload_not_done = ray.wait(
-                [self.objects_names.get_all.remote()], timeout=0.02
-            )
-            if object_names_preload_not_done:
+            try:
+                # st = time.time()
+                object_names_preload = ray.get(self.objects_names.get_all.remote(), timeout=RAY_TIMEOUT)
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "objname..")
+                # st = time.time()
+                is_checked_preload = ray.get(self.is_checked.get_all.remote(), timeout=RAY_TIMEOUT)
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "ischeck..")
+                # st = time.time()
+                unknown_face_encodings = ray.get(self.pre_face_encodings.get_all.remote(), timeout=RAY_TIMEOUT)
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "unkfaceen..\n")
+            except GetTimeoutError:
                 return self.objects
-            else:
-                object_names_preload = ray.get(object_names_preload)[0]
-
-            is_checked_preload, is_checked_preload_not_done = ray.wait([self.is_checked.get_all.remote()], timeout=0.02)
-            if is_checked_preload_not_done:
-                return self.objects
-            else:
-                is_checked_preload = ray.get(is_checked_preload)[0]
-
-            unknown_face_encodings, unknown_face_encodings_not_done = ray.wait(
-                [self.pre_face_encodings.get_all.remote()], timeout=0.02
-            )
-            if unknown_face_encodings_not_done:
-                return self.objects
-            else:
-                unknown_face_encodings = ray.get(unknown_face_encodings)[0]
 
             for index, (row, col) in enumerate(zip(rows, cols)):
                 if row in usedRows or col in usedCols:

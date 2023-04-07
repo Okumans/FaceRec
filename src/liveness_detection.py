@@ -1,57 +1,52 @@
 import cv2
 import numpy as np
-import onnxruntime
-from PIL import Image
-from torchvision import transforms as T
-from skimage.feature import local_binary_pattern
+from src.FaceAntiSpoofing.anti_spoof_predict import AntiSpoofPredict
+from os import listdir
+from src.FaceAntiSpoofing.utility import parse_model_name
+import os.path as path
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class LivenessDetection:
-    def __init__(self, model_path: str):
-        providers = ['CPUExecutionProvider']
-        self.model = onnxruntime.InferenceSession(model_path, providers=providers)
+    def __init__(self):
+        self.attack_list = ['other attack', 'no attack', '2D attack']
+        self.model_test = AntiSpoofPredict(0)
 
-    def predict(self, img):
-        if img.shape != (112, 112, 3):
-            img = cv2.resize(img, (112, 112))
+    @staticmethod
+    def determine(result):
+        model1_result = -1 if result["model1"]["state"] in ['other attack', '2D attack'] else 1
+        model2_result = -1 if result["model2"]["state"] in ['other attack', '2D attack'] else 1
 
-        dummy_face = np.expand_dims(np.array(img, dtype=np.float32), axis=0) / 255.
-        onnx_predict = self.model.run(['activation_5'], {"input": dummy_face})
-        liveness_score = list(onnx_predict[0][0])[1]
+        return (model1_result*result["model1"]["value"] + model2_result*result["model2"]["value"])/2
 
-        return liveness_score
+    def predict(self, face_image):
+        prediction_values = []
+        prediction_labels = []
+        model_count = 1
+
+        for model_name in listdir(path.dirname(__file__) + "/FaceAntiSpoofing/anti_spoof_models"):
+            prediction = np.zeros((1, 3))
+            h_input, w_input, model_type, scale = parse_model_name(model_name)
+            resized_image = cv2.resize(face_image, (w_input, h_input))
+            prediction += self.model_test.predict_onnx(resized_image, model_count)
+            prediction += self.model_test.predict_onnx(resized_image, model_count)
+            prediction_values.append(prediction[0][np.argmax(prediction)])
+            prediction_labels.append(np.argmax(prediction))
+            model_count += 1
+
+        return {"model1": {"state": self.attack_list[prediction_labels[0]], "value": prediction_values[0]},
+                "model2": {"state": self.attack_list[prediction_labels[1]], "value": prediction_values[1]}}
 
 
-class FaceLivenessDetector:
-    def __init__(self, radius=3, n_points=8 * 3, threshold=0.5):
-        self.radius = radius
-        self.n_points = n_points
-        self.threshold = threshold
-
-    def extract_lbp_features(self, image):
-        # Convert the image to grayscale
-        image = np.array(Image.fromarray(image).convert('L'))
-
-        # Extract LBP features
-        lbp = local_binary_pattern(image, self.n_points, self.radius, method='uniform')
-        hist, _ = np.histogram(lbp, bins=np.arange(0, self.n_points + 3), density=True)
-        return hist
-
-    def is_real_face(self, image):
-        # Extract LBP features from the input image
-        hist = self.extract_lbp_features(image)
-
-        # Compute the LBP distance between the input image and a reference image
-        # with known texture characteristics (e.g., a printed photo)
-        reference_hist = np.array([0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.2, 0.1, 0.0, 0.0, 0.0])
-        distance = np.sum((hist - reference_hist) ** 2)
-
-        # Return True if the LBP distance is below the threshold (i.e., the input image is a real face)
-        # Return False otherwise
-        if distance < self.threshold:
-            return True
-        else:
-            return False
+def predict(image):
+    histogram = [0] * 3
+    for j in range(3):
+        histr = cv2.calcHist([image], [j], None, [256], [0, 256])
+        histr *= 255.0 / histr.max()
+        histogram[j] = histr
+    return np.array(histogram)
 
 
 if __name__ == "__main__":

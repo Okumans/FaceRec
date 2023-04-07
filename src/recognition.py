@@ -60,7 +60,7 @@ class Recognition:
         else:
             print("only accepts directory.")
 
-        log(
+        log("\n" +
             tabulate(
                 list(
                     zip(

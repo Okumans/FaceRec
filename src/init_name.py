@@ -47,14 +47,9 @@ def remove_expire_unknown_faces(data_path: str, unknown_face_life_time=timedelta
                     os.remove(unknown_path.get(datum.lstrip("unknown:")))
 
 
-def name_information_init(data_path: str, name_information: str):
-    """
-    :param data_path: face data directory full path
-    :param name_information: name information full path
-    :return: None
-    """
+def name_information_init(data_path: str, name_information: str, certificate_path: str = "src/serviceAccountKey.json"):
 
-    db = DataBase("Students", sync_with_offline_db=True)
+    db = DataBase("Students", sync_with_offline_db=True, certificate_path=certificate_path)
     db.offline_db_folder_path = data_path
 
     if db.sync_with_offline_db and db.can_connect():

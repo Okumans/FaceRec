@@ -5,9 +5,10 @@ import numpy as np
 import imutils
 import time
 from imutils.video import VideoStream
+import os.path as path
 
 model_name = "MyresNet18"
-load_model_path = "src/FaceAntiSpoofing/a8.pth"
+load_model_path = path.dirname(__file__) + "/a8.pth"
 model = getattr(models, model_name)().eval()
 model.load(load_model_path)
 model.train(False)

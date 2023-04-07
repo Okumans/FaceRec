@@ -1,5 +1,5 @@
 import src.triple_gems
-
+import warnings
 from PyQt5 import QtGui
 from PyQt5.QtWidgets import (
     QWidget,
@@ -36,63 +36,70 @@ from shutil import move
 from datetime import datetime
 from pyautogui import size
 from os.path import exists
-from os import mkdir
+from os import mkdir, listdir
 import cv2
 import ray
+from ray.exceptions import GetTimeoutError
 import mediapipe as mp
 from mss import mss
 from threading import Thread
 from json import dumps, loads
-
+from pathlib import Path
 import logging
 from src import ui_popup  # for setting popup
 from src import ui_popup2  # for infobox popup
 from src import general
-
 from src.scrollbar_style import scrollbar_style
 from src.init_name import name_information_init, remove_expire_unknown_faces
 from src.general import Color, get_from_percent
 from src.ShadowRemoval import remove_shadow_grey
-from src.centroidtracker import CentroidTracker
 from src.FaceAlignment import face_alignment
-from src.liveness_detection import LivenessDetection, FaceLivenessDetector
+from src.liveness_detection import LivenessDetection, predict
 from src.DataBase import DataBase
 from src.contamination_scanner import ContaminationScanner
 from src.attendant_graph import AttendantGraph, Arrange
-from src.FaceAntiSpoofing.demo import demo
+warnings.filterwarnings("ignore", category=UserWarning)
+from src.centroidtracker import CentroidTracker
+
 
 # -----------------setting-----------------
 setting = dict()
 setting["project_path"] = r"C:\general\Science_project\Science_project_cp39_refactor"
-setting["video_source"] = 0
-setting["min_detection_confidence"] = 0.7
-setting["min_recognition_confidence"] = 0.55
-setting["min_liveness_confidence"] = 0.7
-setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
+setting["face_reg_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
+setting["db_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
+setting["db_cred_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\serviceAccountKey.json"
+setting["name_map_path"] = setting["face_reg_path"] + r"\name_information.json"
+setting["font"] = "Kanit"
 setting["autoBrightnessContrast"] = False
-setting["autoBrightnessValue"] = 80  # from 0 to 255
-setting["autoContrastValue"] = 30  # from 0 to 255
-setting["face_check_amount"] = 2
-setting["face_max_disappeared"] = 10
-setting["night_mode_brightness"] = 40
 setting["sharpness_filter"] = False
 setting["gray_mode"] = False
 setting["debug"] = False
 setting["liveness_detection"] = True
 setting["fps_show"] = False
-setting["average_fps"] = True
+setting["average_fps"] = False
+setting["remember_unknown_face"] = True
+setting["save_as_video"] = False
+setting["face_alignment"] = True
+setting["video_source"] = 0
+setting["min_detection_confidence"] = 0.7
+setting["min_recognition_confidence"] = 0.55
+setting["min_liveness_confidence"] = 0.7
+setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
+setting["autoBrightnessValue"] = 80  # from 0 to 255
+setting["autoContrastValue"] = 30  # from 0 to 255
+setting["face_check_amount"] = 2
+setting["face_max_disappeared"] = 10
+setting["night_mode_brightness"] = 40
 setting["cpu_amount"] = 4
 setting["resolution"] = 1
 setting["rotate_frame"] = 0
 setting["base_resolution"] = (0, 0)
-setting["remember_unknown_face"] = True
-setting["face_reg_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
-setting["name_map_path"] = setting["face_reg_path"] + r"\name_information.json"
-setting["font"] = "Kanit"
-setting["save_as_video"] = False
-setting["face_alignment"] = True
+
+
 use_folder = [setting['project_path'], setting["face_reg_path"], setting["face_reg_path"] + r"\unknown",
               setting["face_reg_path"] + r"\known"]
+
+RAY_TIMEOUT = 0.005
 
 # -------------global variable--------------
 if __name__ == "__main__":
@@ -104,7 +111,7 @@ if __name__ == "__main__":
         if not exists(folder_path):
             mkdir(folder_path)
 
-    name_information_init(setting["face_reg_path"], setting["name_map_path"])
+    name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
     remove_expire_unknown_faces(setting["face_reg_path"])
     ContaminationScanner(setting["face_reg_path"], .65).scan()
     ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
@@ -151,8 +158,6 @@ class VideoThread(QThread):
         self.run: bool = True
         self.frame_index: int = 0
         self.avg_fps: general.Average = general.Average([0], calculate_amount=100)
-        self.liveness_detection = LivenessDetection(setting["project_path"]+
-                                                    "/src/resources/face_liveness.onnx")
 
         if self.video_type == "screen":
             self.sct = mss()
@@ -236,16 +241,19 @@ class VideoThread(QThread):
                         Color.Violet,
                         Color.Black,
                         2,
-                        3,
+                        3
                     )
 
+                # st = time.time()
                 results: NamedTuple = face_detection.process(image)
+                # print(time.time()-st, 1/((time.time()-st) if time.time()-st != 0 else -1), "process..")
 
                 image.flags.writeable = True
                 image_use = deepcopy(image)
                 image = cv2.resize(image, (W, H))
                 rects = []
 
+                # st = time.time()
                 if results.detections:
                     for detection in results.detections:
                         x_min = detection.location_data.relative_bounding_box.xmin * W * setting["resolution"]
@@ -257,15 +265,14 @@ class VideoThread(QThread):
 
                         face_image = deepcopy(
                             image_use[
-                                    int(box[1])
-                                    - get_from_percent(face_height, 20): int(box[3])
-                                    + get_from_percent(face_height, 20),
-                                    int(box[0])
-                                    - get_from_percent(face_height, 20): int(box[2])
-                                    + get_from_percent(face_height, 20),
+                                int((int(box[1]) - get_from_percent(face_height, 20)) / setting["resolution"]):
+                                int((int(box[3]) + get_from_percent(face_height, 20)) / setting["resolution"]),
+                                int((int(box[0]) - get_from_percent(face_height, 20)) / setting["resolution"]):
+                                int((int(box[2]) + get_from_percent(face_height, 20)) / setting["resolution"]),
                             ]
                         )
-
+                        (int(box[0] / setting["resolution"]), int(box[1] / setting["resolution"])),
+                        (int(box[2] / setting["resolution"]), int(box[3] / setting["resolution"])),
                         # align face if face_alignment is on
                         if setting["face_alignment"]:
                             try:
@@ -273,20 +280,15 @@ class VideoThread(QThread):
                             except TypeError:
                                 pass
 
-                        if setting["liveness_detection"]:
-                            # print(demo(face_image))
-                            # print(self.liveness_detection.predict(face_image))
-                            pass
-
+                        distance: float = ((H * setting["resolution"] * W * setting["resolution"]) / 518400) * (
+                                ((face_image.shape[1] + face_image.shape[0]) / 2) / 220.39
+                        ) ** (1 / -0.949)
                         # check if face data is enough for face recognizing
-                        if face_height >= 50:
+                        if face_height >= 60:
                             rects.append({box: (detection.score[0], face_image)})
 
                         # display debug message in image if debug is on
                         if setting["debug"]:
-                            distance: float = ((H * setting["resolution"] * W * setting["resolution"]) / 518400) * (
-                                    ((face_image.shape[1] + face_image.shape[0]) / 2) / 220.39
-                            ) ** (1 / -0.949)
                             general.putBorderText(
                                 image,
                                 f"confident: {round(detection.score[0], 2)}% "
@@ -324,12 +326,23 @@ class VideoThread(QThread):
                                 3,
                             )
 
-                            liveness = demo(face_image)
+                            # liveness = demo(face_image)
+                            # general.putBorderText(
+                            #     image,
+                            #     f"liveness_model1: {1-liveness if liveness < setting['min_liveness_confidence'] else liveness}"
+                            #     f"-> {'REAL' if liveness < setting['min_liveness_confidence'] else 'FAKE ATTACK'}",
+                            #     (int(box[0]), int(box[1]) - 28),
+                            #     cv2.FONT_HERSHEY_SIMPLEX,
+                            #     0.5,
+                            #     (255, 0, 0),
+                            #     (0, 0, 0),
+                            #     2,
+                            #     3,
+                            # )
                             general.putBorderText(
                                 image,
-                                f"liveness: {1-liveness if liveness < setting['min_liveness_confidence'] else liveness}"
-                                f"-> {'REAL' if liveness < setting['min_liveness_confidence'] else 'FAKE ATTACK'}",
-                                (int(box[0]), int(box[1]) - 28),
+                                f"{LivenessDetection().predict(face_image)}",
+                                (int(box[0]), int(box[1]) - 48),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.5,
                                 (255, 0, 0),
@@ -350,13 +363,18 @@ class VideoThread(QThread):
                             image,
                             (int(box[0] / setting["resolution"]), int(box[1] / setting["resolution"])),
                             (int(box[2] / setting["resolution"]), int(box[3] / setting["resolution"])),
-                            text_color if face_height > 50 else (255, 0, 0),
+                            text_color if 0.3 <= distance <= 3.5 and face_height >= 60 else (255, 0, 0),
                             3,
                         )
 
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "oooo")
+
+                # st = time.time()
                 # update objects in centroid tracker
                 objects = ct.update(rects)
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
 
+                # st = time.time()
                 # check for faces that are not checked and check it
                 temp = last_id
                 objects_ids = [i[0] for i in objects.items()]
@@ -368,16 +386,14 @@ class VideoThread(QThread):
                         already_check[i] = False
 
                 # get data including names and progress from another process if it takes less time than the timeout
-                names, names_not_done = ray.wait([ct.objects_names.get_all.remote()], timeout=0.01)
-                if names_not_done:
-                    continue
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
 
-                progresses, progresses_not_done = ray.wait([ct.recognition_progress.get_all.remote()], timeout=0.01)
-                if progresses_not_done:
+                st = time.time()
+                try:
+                    names = ray.get(ct.objects_names.get_all.remote(), timeout=RAY_TIMEOUT)
+                    progresses = ray.get(ct.recognition_progress.get_all.remote(), timeout=RAY_TIMEOUT)
+                except GetTimeoutError:
                     continue
-
-                names = ray.get(names)[0]
-                progresses = ray.get(progresses)[0]
 
                 # update current identity to the gui
                 for i in objects_ids:
@@ -397,12 +413,12 @@ class VideoThread(QThread):
                         if (
                                 name
                                 not in [
-                                    "UNKNOWN",
-                                    "CHECKED_UNKNOWN",
-                                    "__UNKNOWN__",
-                                    None,
-                                    False,
-                                ] and already_check[i] is False):
+                            "UNKNOWN",
+                            "CHECKED_UNKNOWN",
+                            "__UNKNOWN__",
+                            None,
+                            False,
+                        ] and already_check[i] is False):
 
                             already_check[i] = True
                             ct.last_deregister.delete.remote(i)
@@ -427,15 +443,18 @@ class VideoThread(QThread):
                                 }
                             )
 
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
                 # get last_deregister from another process if it takes less time than the timeout
-                last_deregister, last_deregister_not_finish = ray.wait(
-                    [ct.last_deregister.get_all.remote()], timeout=0.02
-                )
-                if last_deregister_not_finish:
+
+                # st = time.time()
+
+                try:
+                    last_deregister = ray.get(ct.last_deregister.get_all.remote(), timeout=RAY_TIMEOUT)
+                except GetTimeoutError:
                     continue
 
                 # update the all the identity to the gui
-                for i in ray.get(last_deregister)[0].items():
+                for i in last_deregister.items():
                     last_objects_names = i[1].get("name")
                     progress = progresses.get(i[0])
                     if last_objects_names is not None and already_check[i[0]] is False:
@@ -479,6 +498,10 @@ class VideoThread(QThread):
 
                 # put some text to the image; text consists of index (objectID): the current index of the students
                 #                                              IDD (name): the ID of the identity
+
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
+
+                # st = time.time()
                 for (objectID, centroid) in objects.items():
                     text = "ID [{}]".format(objectID)
                     name = (
@@ -529,6 +552,7 @@ class VideoThread(QThread):
                         -1,
                     )
 
+                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                 total_time = new_frame_time - prev_frame_time
                 self.frame_index += 1
@@ -587,7 +611,7 @@ class App(QWidget):
         self.info_boxes_ID = []
         self.id_navigation = {}
         self.db = DataBase("Students", sync_with_offline_db=True)
-        self.db.offline_db_folder_path = r"C:\general\Science_project\Science_project_cp39\resources_test_2"
+        self.db.offline_db_folder_path = setting["db_path"]
         parent.setWindowTitle("Qt live label demo")
         parent.resize(1336, 553)
         parent.setStyleSheet("background-color: #0b1615;")
