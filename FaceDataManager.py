@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QInputDialog,
     QBoxLayout,
-    QMessageBox
+    QMessageBox,
 )
 from PyQt5.QtGui import QPixmap, QFont, QIcon
 from PyQt5.QtCore import (
@@ -31,17 +31,17 @@ from PyQt5.QtCore import (
     pyqtBoundSignal,
     QPropertyAnimation,
 )
-from scrollbar_style import scrollbar_style
+from src.scrollbar_style import scrollbar_style
 import sys
 import os.path as path
 from os import remove
-import general
+from src import general
 import pickle
 import cv2
 from copy import deepcopy
 import numpy as np
-from attendant_graph import AttendantGraph, Arrange
-from DataBase import DataBase
+from src.attendant_graph import AttendantGraph, Arrange
+from src.DataBase import DataBase
 from shutil import move
 from uuid import uuid4
 from threading import Thread
@@ -111,7 +111,9 @@ class App(QMainWindow):
         element_font.setBold(True)
         self.id_label.setFont(element_font)
         self.id_label.setStyleSheet(
-            "background-color: #142523;\n" "border-radius: 10px;\n" "border-bottom: 2px solid #305752;color:#9eb5b3;"
+            "background-color: #142523;\n"
+            "border-radius: 10px;\n"
+            "border-bottom: 2px solid #305752;color:#9eb5b3;"
             "padding-bottom: 5px; color: rgba(158, 181, 179, 80)"
         )
         self.id_label.mousePressEvent = self.add_data_to_id
@@ -189,7 +191,8 @@ class App(QMainWindow):
         self.add_input("จำนวนวันที่มาโรงเรียน", "active_days", enable=False)
         self.add_input("เช็คชื่อครั้งล่าสุด", "last_checked", enable=False)
         self.data_label_layout.addStretch()
-        self.save_button = general.PushButton(style_sheet="""background-color: %s;
+        self.save_button = general.PushButton(
+            style_sheet="""background-color: %s;
                                                        border: none;
                                                        border-radius: 5px;
                                                        color: %s;
@@ -199,14 +202,15 @@ class App(QMainWindow):
                                                        font: bold \"Kanit\";
                                                        font-size: {self.font_size}px;
                                                        margin: 4px 2px;""",
-                                              base_color="#637173",
-                                              foreground_base_color="black",
-                                              foreground_changed_color="black"
-                                              )
+            base_color="#637173",
+            foreground_base_color="black",
+            foreground_changed_color="black",
+        )
         self.save_button.setText("บันทึก")
         self.save_button.clicked.connect(self.save_data)
 
-        self.delete_button = general.PushButton(style_sheet="""background-color: %s;
+        self.delete_button = general.PushButton(
+            style_sheet="""background-color: %s;
                                                        border: none;
                                                        border-radius: 5px;
                                                        color: %s;
@@ -216,11 +220,11 @@ class App(QMainWindow):
                                                        font: bold \"Kanit\";
                                                        font-size: {self.font_size}px;
                                                        margin: 4px 2px;""",
-                                                base_color="#735a5d",
-                                                changed_color="#b71b32",
-                                                foreground_base_color="black",
-                                                foreground_changed_color="black"
-                                                )
+            base_color="#735a5d",
+            changed_color="#b71b32",
+            foreground_base_color="black",
+            foreground_changed_color="black",
+        )
         self.delete_button.setText("ลบ")
         self.delete_button.clicked.connect(self.delete_data)
 
@@ -230,8 +234,9 @@ class App(QMainWindow):
 
         self.data_label_layout.addLayout(layout_button)
 
-        self.add_button = general.PushButton(self.centralwidget,
-                                             style_sheet="""background-color: %s;
+        self.add_button = general.PushButton(
+            self.centralwidget,
+            style_sheet="""background-color: %s;
                                                         border: none;
                                                         border-radius: 45px;
                                                         color: %s;
@@ -241,12 +246,12 @@ class App(QMainWindow):
                                                         font: bold \"Kanit\";
                                                         font-size: {self.font_size}px;
                                                         margin: 4px 2px;""",
-                                             base_color="#1bb77b",
-                                             foreground_base_color="black",
-                                             changed_color="#166346",
-                                             foreground_changed_color="black"
-                                             )
-        self.add_button.setIcon(QIcon("add.png"))
+            base_color="#1bb77b",
+            foreground_base_color="black",
+            changed_color="#166346",
+            foreground_changed_color="black",
+        )
+        self.add_button.setIcon(QIcon("src/resources/add.png"))
         self.add_button.move(self.size().width() - 130, self.size().height())
         self.add_button.setIconSize(QSize(30, 30))
         self.add_button.setFixedSize(QSize(100, 100))
@@ -282,11 +287,10 @@ class App(QMainWindow):
                 else:
                     print("error bro")
 
-            image = general.generate_profile(ID)
+            image = general.generate_profile(ID, image_source="src/resources/unknown_people.png", font_path=font_path)
             layout, img_box, message_box = self.new_info_box(
-                f"<font size=8><b>{ID} [{face_data_loaded[ID]['data_amount']}]</font>",
-                image,
-                ID)
+                f"<font size=8><b>{ID} [{face_data_loaded[ID]['data_amount']}]</font>", image, ID
+            )
             self.id_navigation[ID] = {"image_box": img_box, "message_box": message_box, "layout": layout}
             self.verticalLayout.addLayout(layout)
             self.face_data_info_loaded = face_data_loaded
@@ -321,31 +325,33 @@ class App(QMainWindow):
         if self.face_data_info_loaded[self.current]["data_amount"] != 0:
             return
 
-        mode, done = QInputDialog.getItem(self, 'Input Dialog', 'choose mode:', ["load from image files",
-                                                                                 "scan from camera",
-                                                                                 "load from trained file"])
+        mode, done = QInputDialog.getItem(
+            self,
+            "Input Dialog",
+            "choose mode:",
+            ["load from image files", "scan from camera", "load from trained file"],
+        )
         if not done:
             return
 
         if not preload_face_reg_model:
-            from FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
+            from src.FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
 
         if mode == "load from image files":
             dial = QFileDialog()
             dial.setStyleSheet("background-color: white;")
-            filenames = dial.getOpenFileNames(self, "Image files",
-                                              filter="Image files (*.jpg *.JPG *.png *.jpeg *.PNG *.JPEG)")
+            filenames = dial.getOpenFileNames(
+                self, "Image files", filter="Image files (*.jpg *.JPG *.png *.jpeg *.PNG *.JPEG)"
+            )
             if filenames:
                 filenames = filenames[0]
-                fft = FileFaceTrainer(ID=self.current,
-                                      output_path=self.target_directory + "/known")
+                fft = FileFaceTrainer(ID=self.current, output_path=self.target_directory + "/known")
                 Thread(target=lambda: fft.train_now_normal(filenames)).start()
 
         elif mode == "load from trained file":
             dial = QFileDialog()
             dial.setStyleSheet("background-color: white;")
-            filenames = dial.getOpenFileNames(self, "Trained files",
-                                              filter="Pickle files (*.pkl, *.pickle, *.PKL)")
+            filenames = dial.getOpenFileNames(self, "Trained files", filter="Pickle files (*.pkl, *.pickle, *.PKL)")
             if filenames:
                 filename = filenames[0][0]
                 print(filename)
@@ -357,14 +363,13 @@ class App(QMainWindow):
                     file.write(pickle.dumps(information))
 
         elif mode == "scan from camera":
-            vft = VideoFaceTrainer(ID=self.current,
-                                   output_path=self.target_directory + "/known")
+            vft = VideoFaceTrainer(ID=self.current, output_path=self.target_directory + "/known")
             Thread(target=lambda: (vft.run(), vft.write_data_normal_gray())).start()
 
     def delete_data(self):
         ID = self.current
 
-        con = QMessageBox().question(self, "?", f"Are you sure to delete \"{ID}\". You cannot recover this.")
+        con = QMessageBox().question(self, "?", f'Are you sure to delete "{ID}". You cannot recover this.')
         if con == QMessageBox.Yes:
             if not self.created_face_not_saved.get(ID):
                 remove(self.face_data_info_loaded[ID]["path"])
@@ -425,13 +430,16 @@ class App(QMainWindow):
             with open(self.face_data_info_loaded[ID_old]["path"], "wb") as file:
                 file.write(pickle.dumps(face_data))
 
-            move(self.target_directory + r"\unknown\{}.pkl".format(ID),
-                 self.target_directory + r"\known\{}.pkl".format(ID))
+            move(
+                self.target_directory + r"\unknown\{}.pkl".format(ID),
+                self.target_directory + r"\known\{}.pkl".format(ID),
+            )
             self.face_data_info_loaded[ID_old]["path"] = self.target_directory + r"\known\{}.pkl".format(ID)
 
             if self.db.get_data(ID_old) is not None:
-                self.db.delete(ID_old)
                 db_data = self.db.get_data(ID_old)
+                self.db.delete(ID_old)
+
             else:
                 db_data = {
                     "realname": "",
@@ -446,25 +454,27 @@ class App(QMainWindow):
                     "last_update": 0,
                 }
 
-            self.db.add_data(ID,
-                             realname=db_data.get("realname", ""),
-                             surname=db_data.get("surname", ""),
-                             nickname=db_data.get("nickname", ""),
-                             student_id=db_data.get("student_id", 0),
-                             student_class=db_data.get("student_class", ""),
-                             class_number=db_data.get("class_number", 0),
-                             active_days=db_data.get("active_days", 0),
-                             last_checked=db_data.get("last_checked", 0),
-                             graph_info=db_data.get("graph_info", []),
-                             )
+            self.db.add_data(
+                ID,
+                realname=db_data.get("realname", ""),
+                surname=db_data.get("surname", ""),
+                nickname=db_data.get("nickname", ""),
+                student_id=db_data.get("student_id", 0),
+                student_class=db_data.get("student_class", ""),
+                class_number=db_data.get("class_number", 0),
+                active_days=db_data.get("active_days", 0),
+                last_checked=db_data.get("last_checked", 0),
+                graph_info=db_data.get("graph_info", []),
+            )
 
             self.id_navigation[ID] = self.id_navigation[ID_old]
             self.face_data_info_loaded[ID] = self.face_data_info_loaded[ID_old]
             del self.id_navigation[ID_old]
             del self.face_data_info_loaded[ID_old]
             del self.created_face_not_saved[ID_old]
-            self.id_navigation[ID]["message_box"].setText(f"<font size=8><b>{ID} "
-                                                          f"[{self.face_data_info_loaded[ID]['data_amount']}]</font>")
+            self.id_navigation[ID]["message_box"].setText(
+                f"<font size=8><b>{ID} " f"[{self.face_data_info_loaded[ID]['data_amount']}]</font>"
+            )
             self.id_navigation[ID]["message_box"].mousePressEvent = lambda _: self.info_box_popup(ID)
 
         if self.db.get_data(ID) is None:
@@ -472,28 +482,31 @@ class App(QMainWindow):
                 with open(self.target_directory + "/known/" + ID + ".pkl", "wb") as file:
                     data = {"id": ID, "data": []}
                     file.write(pickle.dumps(data))
-                    self.face_data_info_loaded[ID] = {"path": self.target_directory + "/known/" + ID + ".pkl",
-                                                      "data_amount": 0}
+                    self.face_data_info_loaded[ID] = {
+                        "path": self.target_directory + "/known/" + ID + ".pkl",
+                        "data_amount": 0,
+                    }
             self.db.add_data(ID, *self.db.default)
 
-        self.db.update(ID=ID,
-                       realname=realname,
-                       surname=surname,
-                       nickname=nickname,
-                       student_id=student_id,
-                       student_class=student_class,
-                       class_number=class_number)
+        self.db.update(
+            ID=ID,
+            realname=realname,
+            surname=surname,
+            nickname=nickname,
+            student_id=student_id,
+            student_class=student_class,
+            class_number=class_number,
+        )
 
         if self.current_filename:
-            self.db.Storage().add_image(ID=ID,
-                                        filename=self.current_filename,
-                                        resize=(86, 86))
+            self.db.Storage().add_image(ID=ID, filename=self.current_filename, resize=(86, 86))
 
         if self.current_filename:
             self.id_navigation[self.current]["image_box"].setPixmap(
                 general.round_Pixmap(
                     general.convert_cv_qt(
-                        cv2.imread(self.current_filename),
+                        cv2.imread(self.current_filename) if cv2.imread(self.current_filename) is not None else
+                        image_error,
                         self.id_navigation[self.current]["image_box"].size().width() - 10,
                         self.id_navigation[self.current]["image_box"].size().height() - 10,
                     ),
@@ -535,9 +548,7 @@ class App(QMainWindow):
         name_label = QLabel()
         name_label.setText(message)
         name_label.setFont(fontl)
-        name_label.setStyleSheet(
-            "color: #9eb5b3;"
-        )
+        name_label.setStyleSheet("color: #9eb5b3;")
 
         input_lineedit = QLineEdit()
         input_lineedit.setText(str(value))
@@ -572,6 +583,7 @@ class App(QMainWindow):
                         widget.setParent(None)
                     else:
                         delete_items_of_layout(item.layout())
+
         for i in range(self.verticalLayout.count()):
             layout_item = self.verticalLayout.itemAt(i)
             if layout_item.layout() == box:
@@ -626,11 +638,15 @@ class App(QMainWindow):
         student_class = data["student_class"]
         class_number = data["class_number"]
 
-        active_days = len(Arrange(AttendantGraph().load_floats(data.get("graph_info")).dates).arrange_in_all_as_day()) \
-            if data.get("graph_info") is not None else "-"
+        active_days = (
+            len(Arrange(AttendantGraph().load_floats(data.get("graph_info")).dates).arrange_in_all_as_day())
+            if data.get("graph_info") is not None
+            else "-"
+        )
         last_checked = data["last_checked"]
-        last_checked = datetime.datetime.fromtimestamp(last_checked).strftime("%d %b %Y %X") if last_checked != 0 else \
-            "-"
+        last_checked = (
+            datetime.datetime.fromtimestamp(last_checked).strftime("%d %b %Y %X") if last_checked != 0 else "-"
+        )
 
         name = ID if name == " " else name
 
@@ -641,7 +657,7 @@ class App(QMainWindow):
         self.image_label.setPixmap(
             general.round_Pixmap(
                 general.convert_cv_qt(
-                    general.generate_profile(ID),
+                    general.generate_profile(ID, image_source=unknown_image_source, font_path=font_path),
                     self.image_label.size().width() - 10,
                     self.image_label.size().height() - 10,
                 ),
@@ -688,9 +704,9 @@ class App(QMainWindow):
             )
         )
 
-        layout, img_box, message_box = self.new_info_box(f"<font size=8><b>{generated_name} [0]</font>",
-                                                         None,
-                                                         generated_name)
+        layout, img_box, message_box = self.new_info_box(
+            f"<font size=8><b>{generated_name} [0]</font>", None, generated_name
+        )
 
         if self.current:
             self.current_box_animation_left(self.id_navigation[self.current]["message_box"])
@@ -715,7 +731,6 @@ class App(QMainWindow):
         box.setSizePolicy(sizePolicy)
         box.setMinimumSize(QSize(0, 160))
         box.setMaximumSize(QSize(16777215, 160))
-        box.setFont(QFont(font))
         box.setStyleSheet(
             "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop: 0 rgb(62, 83, 87), stop: 1 rgb(32, 45, 47));"
             "color: #8ba0a3;"
@@ -758,14 +773,18 @@ if __name__ == "__main__":
     # True: load model before starting program -> use a lot of memory bet best for training new face
     # False: load model when start training -> use less memory but slow when start training
     if preload_face_reg_model:
-        from FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
+        from src.FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
 
-    image_error = cv2.imread("image_error.png")
-    unknown_image = cv2.imread("unknown_people.png")
-    font = "Kanit"
+    unknown_image_source = "src/resources/unknown_people.png"
+    image_error_source = "src/resources/image_error.png"
+    font_path = "src/resources/Kanit-Medium.ttf"
+
+    image_error = cv2.imread(image_error_source)
+    unknown_image = cv2.imread(unknown_image_source)
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
-    a = App(r"C:\general\Science_project\Science_project_cp39\resources_test_2")
+    a = App(r"recognition_resources")
     a.show()
     sys.exit(app.exec_())
