@@ -2,6 +2,8 @@ import glob
 import logging
 import os.path as path
 import pickle
+from tabulate import tabulate
+import cv2
 import face_recognition
 import imutils
 import numpy as np
@@ -11,6 +13,7 @@ from json import loads, decoder
 from os.path import exists
 import mediapipe as mp
 from tabulate import tabulate
+from src.ShadowRemoval import remove_shadow_grey
 
 
 def get_all_filename(data_path) -> list:
@@ -72,19 +75,22 @@ class Recognition:
                 tablefmt="rounded_grid",
             ),
             color=Color.Cyan,
-        )
+            )
 
     def recognition(self, img):
         # return face and confidence of the face
         if not self.loaded_encodings and not self.remember:
+            print("false becuase i dont know")
             return (False, 0), None
 
         # print(np.shape(self.loaded_encodings), self.loaded_id, len(self.loaded_id))
 
         mp_face_detection = mp.solutions.face_detection
         W, H, _ = img.shape
+        img = cv2.cvtColor(remove_shadow_grey(img), cv2.COLOR_GRAY2RGB)
 
         if not (W and H):
+            print("false becuase w or h is 0")
             return (False, 0), None
 
         img = imutils.resize(img, width=230)
@@ -117,14 +123,17 @@ class Recognition:
             face_location = face_recognition.face_locations(img)  # base model = hog
 
         try:
-            new_encoding = face_recognition.face_encodings(img, face_location, num_jitters=self.num_jitters)[0]
+            new_encoding = face_recognition.face_encodings(img, face_location, num_jitters=self.num_jitters,
+                                                           model="large")[0]
             # new_encoding = face_recognition.face_encodings(img, num_jitters=self.num_jitters)[0]
+
         except IndexError:
+            print("false becuase index error")
             return (False, 0), None
 
         if not self.loaded_encodings:
             return (self.unknown, 0.3), new_encoding
-        matches = face_recognition.compare_faces(self.loaded_encodings, new_encoding, tolerance=0.4)
+        matches = face_recognition.compare_faces(self.loaded_encodings, new_encoding, tolerance=0.6)
         face_distances = face_recognition.face_distance(self.loaded_encodings, new_encoding)
 
         avg: dict[str, general.Average] = {}
@@ -136,15 +145,16 @@ class Recognition:
             except IndexError:
                 pass
                 # print(len(self.loaded_id), len(self.loaded_encodings))
-        logging.info(f"possible names: {min(avg, key=lambda a: avg[a].get())}")
 
         match_names = set()
         for j, i in enumerate(matches):
             if i:
                 match_names.add(self.loaded_id[j])
         match_names = list(match_names)
-        logging.info(f"recognized: {match_names}")
         match_names_value = [avg[i].get() for i in match_names]
+        # print(f"possible names: \n"
+        #       f"{tabulate([(match_names[i],match_names_value[i]) for i in range(len(match_names[:5]))],tablefmt='fancy_grid')}")
+
         name = self.unknown
         best_match_value = 0.7
 
@@ -154,6 +164,8 @@ class Recognition:
             if 1 - best_match_value > self.min_confidence:
                 # name = f"{self.loaded_id[best_match_index]} [{round(1-face_distances[best_match_index],2)}]"
                 name = f"{match_names[best_match_index]}"
+
+            print(f"recognized: {name}")
 
             if name == self.unknown and self.remember:
                 return (name, 1 - best_match_value), new_encoding

@@ -23,7 +23,7 @@ class ContaminationScanner:
                 ID: str = raw_information["id"]
                 data: list[np.ndarray] = raw_information["data"]
 
-                print(f"\rSCANNING {path.basename(file)}", end="")
+                print(f"\rSCANNING QUALIFY{path.basename(file)}", end="")
                 new_data: list[np.ndarray] = []
                 for dat in data:
                     similarity = 1 - (sum(face_distance(data, dat)) / len(data))
@@ -46,6 +46,7 @@ class ContaminationScanner:
                 data_consider: list[np.ndarray] = raw_information_consider["data"]
 
                 for file_another in self.files:
+                    print(f"\rSCANNING DUPLICATE {path.basename(file_another)}::{path.basename(file_consider)}", end="")
                     with open(file_another, "rb") as f_:
                         raw_information_another: dict[str, Any] = pickle.loads(f_.read())
                         ID_another: str = raw_information_another["id"]

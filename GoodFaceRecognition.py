@@ -58,16 +58,17 @@ from src.liveness_detection import LivenessDetection, predict
 from src.DataBase import DataBase
 from src.contamination_scanner import ContaminationScanner
 from src.attendant_graph import AttendantGraph, Arrange
-warnings.filterwarnings("ignore", category=UserWarning)
-from src.centroidtracker import CentroidTracker
 
+warnings.filterwarnings("ignore")
+from src.centroidtracker import CentroidTracker
 
 # -----------------setting-----------------
 setting = dict()
 setting["project_path"] = r"C:\general\Science_project\Science_project_cp39_refactor"
 setting["face_reg_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
 setting["db_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
-setting["db_cred_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\serviceAccountKey.json"
+setting[
+    "db_cred_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\serviceAccountKey.json"
 setting["name_map_path"] = setting["face_reg_path"] + r"\name_information.json"
 setting["font"] = "Kanit"
 setting["autoBrightnessContrast"] = False
@@ -76,10 +77,10 @@ setting["gray_mode"] = False
 setting["debug"] = False
 setting["liveness_detection"] = True
 setting["fps_show"] = False
-setting["average_fps"] = False
+setting["average_fps"] = True
 setting["remember_unknown_face"] = True
 setting["save_as_video"] = False
-setting["face_alignment"] = True
+setting["face_alignment"] = False
 setting["video_source"] = 0
 setting["min_detection_confidence"] = 0.7
 setting["min_recognition_confidence"] = 0.55
@@ -87,14 +88,13 @@ setting["min_liveness_confidence"] = 0.7
 setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
 setting["autoBrightnessValue"] = 80  # from 0 to 255
 setting["autoContrastValue"] = 30  # from 0 to 255
-setting["face_check_amount"] = 2
+setting["face_check_amount"] = 1
 setting["face_max_disappeared"] = 10
 setting["night_mode_brightness"] = 40
-setting["cpu_amount"] = 4
+setting["cpu_amount"] = 8
 setting["resolution"] = 1
 setting["rotate_frame"] = 0
 setting["base_resolution"] = (0, 0)
-
 
 use_folder = [setting['project_path'], setting["face_reg_path"], setting["face_reg_path"] + r"\unknown",
               setting["face_reg_path"] + r"\known"]
@@ -104,7 +104,7 @@ RAY_TIMEOUT = 0.005
 # -------------global variable--------------
 if __name__ == "__main__":
     print(f"project path set to \"{setting['project_path']}\"")
-    logging.basicConfig(level=logging.INFO)
+    # logging.basicConfig(level=logging.INFO)
 
     # check if using folder is available
     for folder_path in use_folder:
@@ -265,10 +265,10 @@ class VideoThread(QThread):
 
                         face_image = deepcopy(
                             image_use[
-                                int((int(box[1]) - get_from_percent(face_height, 20)) / setting["resolution"]):
-                                int((int(box[3]) + get_from_percent(face_height, 20)) / setting["resolution"]),
-                                int((int(box[0]) - get_from_percent(face_height, 20)) / setting["resolution"]):
-                                int((int(box[2]) + get_from_percent(face_height, 20)) / setting["resolution"]),
+                            int((int(box[1]) - get_from_percent(face_height, 20)) / setting["resolution"]):
+                            int((int(box[3]) + get_from_percent(face_height, 20)) / setting["resolution"]),
+                            int((int(box[0]) - get_from_percent(face_height, 20)) / setting["resolution"]):
+                            int((int(box[2]) + get_from_percent(face_height, 20)) / setting["resolution"]),
                             ]
                         )
                         (int(box[0] / setting["resolution"]), int(box[1] / setting["resolution"])),
@@ -410,14 +410,13 @@ class VideoThread(QThread):
                             }
                         )
                     else:
-                        if (
-                                name
-                                not in [
-                            "UNKNOWN",
-                            "CHECKED_UNKNOWN",
-                            "__UNKNOWN__",
-                            None,
-                            False,
+                        if (name not in [
+                                "UNKNOWN",
+                                "CHECKED_UNKNOWN",
+                                "__UNKNOWN__",
+                                None,
+                                False,
+                                ""
                         ] and already_check[i] is False):
 
                             already_check[i] = True

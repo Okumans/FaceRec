@@ -47,7 +47,7 @@ class DataBase:
                     return
                 return cv2.imdecode(np.frombuffer(blob.download_as_string(), np.uint8), cv2.COLOR_BGRA2BGR)
             else:
-                return cv2.imread("image_error.png")
+                return cv2.imread(path.dirname(__file__) + r"\resources\image_error.png")
 
     @staticmethod
     def check_certificate(certificate_path):
