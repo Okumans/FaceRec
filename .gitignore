@@ -1,0 +1,11 @@
+FaceNetRecogniton/
+*.pkl
+src/resources/serviceAccountKey.json
+src/centroidtracker_old.py
+src/face_reg_knn.py
+src/face_distance_test.py
+src/process_data_angle.py
+src/test-1.py
+src/test.py
+src/train_data_angle.py
+*.bat
