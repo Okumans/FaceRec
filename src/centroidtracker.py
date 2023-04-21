@@ -54,6 +54,7 @@ class CentroidTracker:
         self.remember_unknown_face = remember_unknown_face
         self.remember_unknown_face_maximum_confidence = 0.48
         self.liveness_threshold = .50
+        self.liveness_check = True
         self.last_deregister = general.rayDict.remote()
         self.recognition_progress = general.rayDict.remote()
         self.pre_face_encodings = general.rayDict.remote()
@@ -89,7 +90,8 @@ class CentroidTracker:
             ), face_encodings = self.recognizer.recognition(i)
             if face_encodings is not None:
                 encodings.append(face_encodings)
-                liveness.add(LivenessDetection.determine(LivenessDetection().predict(i)))
+                if self.liveness_check:
+                    liveness.add(LivenessDetection.determine(LivenessDetection().predict(i)))
 
             if names.get(name) is None:
                 names[name] = []
@@ -98,17 +100,19 @@ class CentroidTracker:
         most_common = general.Most_Common(names)
 
         if most_common["name"] is None:
+            print("bro! mostcommon is None")
             self.is_checked.set.remote(objectID, False)
         elif most_common["name"] is False:
+            print("bro! mostcommon is False")
             self.is_checked.set.remote(objectID, False)
             self.objects_names.set.remote(objectID, "CHECKED_UNKNOWN")
         else:
-            logging.info(f"generated: {names}")
-            logging.info(most_common["name"])
-            print(liveness.get())
+            print(most_common["name"])
+            print(liveness.get() if self.liveness_check else "LIVENESS_IS_OFF")
             check_name = most_common["name"]
             if most_common["name"] == self.recognizer.unknown and self.remember_unknown_face:
                 generate_name = f"unknown:{str(uuid4().hex)}"
+                print(f"generated: {generate_name}")
                 if self.remember_unknown_face_maximum_confidence >= most_common["confidence"]:
                     self.pre_face_encodings.set.remote(generate_name, encodings)
                     check_name = generate_name
@@ -117,7 +121,7 @@ class CentroidTracker:
                     self.pre_face_encodings.set.remote(most_common["name"], encodings)
                 # check_name = most_common["name"]
             self.is_checked.set.remote(objectID, True)
-            if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
+            if liveness.get() < self.liveness_threshold and most_common["name"] is not False and self.liveness_check:
                 check_name = "attacked:" + check_name
             self.objects_names.set.remote(objectID, check_name)
 
@@ -139,7 +143,8 @@ class CentroidTracker:
                 ), face_encodings = self.recognizer.recognition(i)
                 if face_encodings is not None:
                     encodings.append(face_encodings)
-                    liveness.add(LivenessDetection.determine(LivenessDetection().predict(i)))
+                    if self.liveness_check:
+                        liveness.add(LivenessDetection.determine(LivenessDetection().predict(i)))
                 if names.get(name) is None:
                     names[name] = []
                 names[name].append(recognition_confidence)
@@ -150,26 +155,26 @@ class CentroidTracker:
                 generate_name = f"unknown:{str(uuid4().hex)}"
                 if self.remember_unknown_face_maximum_confidence >= most_common["confidence"]:
                     self.pre_face_encodings.set.remote(generate_name, encodings)
-                    logging.info("generated:"+generate_name)
+                    print("generated:"+generate_name)
                 else:
-                    logging.info("face_encoding error")
+                    print("face_encoding error")
                     # self.pre_face_encodings.set.remote(self.recognizer.unknown, encodings)
 
-                if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
+                if liveness.get() < self.liveness_threshold and most_common["name"] is not False and self.liveness_check:
                     generate_name = "attacked:"+generate_name
                 self.last_deregister.recursive_update.remote({"name": generate_name}, objectID)
-                logging.info(generate_name+"final_result")
+                print(generate_name+"final_result")
             else:
-                if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
+                if liveness.get() < self.liveness_threshold and most_common["name"] is not False and self.liveness_check:
                     most_common["name"] = "attacked:"+most_common["name"]
                 self.last_deregister.recursive_update.remote({"name": most_common["name"]}, objectID)
-                logging.info(f"{most_common['name']} final_result")
+                print(f"{most_common['name']} final_result")
         else:
             most_common = {"name": ray.get(self.objects_names.get.remote(objectID))}
-            if liveness.get() < self.liveness_threshold and most_common["name"] is not False:
+            if liveness.get() < self.liveness_threshold and most_common["name"] is not False and self.liveness_check:
                 most_common["name"] = "attacked:" + most_common["name"]
             self.last_deregister.recursive_update.remote({"name": most_common["name"]}, objectID)
-            logging.info(f"{most_common['name']} final_result")
+            print(f"{most_common['name']} final_result")
 
     def deregister(self, objectID):
         self.start_recognition_final.remote(self, objectID)
@@ -218,7 +223,6 @@ class CentroidTracker:
         else:
             objectIDs = list(self.objects.keys())
             objectCentroids = list(self.objects.values())
-
 
             D = dist.cdist(np.array(objectCentroids), inputCentroids)
             rows = D.min(axis=1).argsort()

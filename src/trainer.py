@@ -7,7 +7,7 @@ import cv2
 import tabulate
 from copy import deepcopy
 import unicodedata as ud
-import general
+import src.general
 
 files = sys.argv[1:]
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     ray.init()
     allowed_extensions = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif"]
     cores = 8
-    return_values = general.rayDict.remote()
+    return_values = src.general.rayDict.remote()
     print(
         tabulate.tabulate(
             list(

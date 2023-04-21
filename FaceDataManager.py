@@ -56,7 +56,7 @@ class App(QMainWindow):
     def __init__(self, target_directory: str):
         super().__init__()
         self.target_directory = target_directory
-        self.db = DataBase("Students")
+        self.db = DataBase("Students", certificate_path="src/resources/serviceAccountKey.json")
         self.db.offline_db_folder_path = self.target_directory
         self.result = {}
         self.current: str = ""  # current person data (ID)
@@ -287,7 +287,7 @@ class App(QMainWindow):
                 else:
                     print("error bro")
 
-            image = general.generate_profile(ID, image_source="src/resources/unknown_people.png", font_path=font_path)
+            image = general.generate_profile(ID, unknown_image_source, font_path)
             layout, img_box, message_box = self.new_info_box(
                 f"<font size=8><b>{ID} [{face_data_loaded[ID]['data_amount']}]</font>", image, ID
             )
@@ -657,7 +657,7 @@ class App(QMainWindow):
         self.image_label.setPixmap(
             general.round_Pixmap(
                 general.convert_cv_qt(
-                    general.generate_profile(ID, image_source=unknown_image_source, font_path=font_path),
+                    general.generate_profile(ID, unknown_image_source, font_path),
                     self.image_label.size().width() - 10,
                     self.image_label.size().height() - 10,
                 ),
@@ -696,7 +696,7 @@ class App(QMainWindow):
         self.image_label.setPixmap(
             general.round_Pixmap(
                 general.convert_cv_qt(
-                    general.generate_profile(generated_name),
+                    general.generate_profile(generated_name, unknown_image_source, font_path),
                     self.image_label.size().width() - 10,
                     self.image_label.size().height() - 10,
                 ),
@@ -750,7 +750,7 @@ class App(QMainWindow):
         img_box.setMaximumSize(QSize(160, 160))
         img_box.setStyleSheet("background-color: #114f46;" "border-radius: 10px;" "border: 3px solid #0a402c;")
         if cv_image is None or not cv_image.any():
-            cv_image = general.generate_profile(ID)
+            cv_image = general.generate_profile(ID, unknown_image_source, font_path)
         img_box.setPixmap(
             general.round_Pixmap(
                 general.convert_cv_qt(
@@ -768,12 +768,18 @@ class App(QMainWindow):
         return horizontalLayout, img_box, box
 
 
+def importer():
+    from src.FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
+    print("successfully imported FaceTrainer_new...")
+
+
 if __name__ == "__main__":
     preload_face_reg_model = False
     # True: load model before starting program -> use a lot of memory bet best for training new face
     # False: load model when start training -> use less memory but slow when start training
     if preload_face_reg_model:
         from src.FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
+    Thread(target=importer).start()
 
     unknown_image_source = "src/resources/unknown_people.png"
     image_error_source = "src/resources/image_error.png"

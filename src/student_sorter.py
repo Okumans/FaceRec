@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import Union, Any, Callable
-from attendant_graph import Arrange, AttendantGraph
+from src.attendant_graph import Arrange, AttendantGraph
 from datetime import datetime
-from DataBase import DataBase
+from src.DataBase import DataBase
 
 
 class Student:

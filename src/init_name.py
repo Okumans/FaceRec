@@ -89,8 +89,11 @@ def name_information_init(data_path: str, name_information: str, certificate_pat
                 name_information_data[ID] = filename
 
         if db.get_data(filename) is None and db.get_data("unknown:" + filename) is None:
-            print(filename, "unknown:" + filename)
-            db.add_data("unknown:"+filename, *DataBase.default)
+            print(path.basename(path.dirname(file)))
+            if path.basename(path.dirname(file)) == "known":
+                db.add_data(filename, *DataBase.default)
+            else:
+                db.add_data("unknown:"+filename, *DataBase.default)
         else:
             try:
                 name = db.get_data(filename).get("realname") + " " + db.get_data(filename).get("surname")

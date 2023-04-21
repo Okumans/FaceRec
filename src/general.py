@@ -131,6 +131,11 @@ class Average:
     def get(self):
         return self.result
 
+    def clear(self):
+        self.length = 0
+        self.values = 0
+        self.result = 0
+
 
 def Most_Common(dtc) -> dict:
     max_con = {"name": "", "confidence": -100000}

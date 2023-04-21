@@ -8,16 +8,16 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import time
-from trainer import spilt_chunk, resize_by_height, split_chunks_of
 import ray
-from ShadowRemoval import remove_shadow_grey
-from general import Direction, putBorderText, change_brightness, get_from_percent
-from topData import topData
 from copy import deepcopy
 import pickle
-from FaceAlignment import face_alignment
+from src.FaceAlignment import face_alignment
 import face_recognition
 from threading import Thread
+from src.ShadowRemoval import remove_shadow_grey
+from src.trainer import spilt_chunk, resize_by_height, split_chunks_of
+from src.general import Direction, putBorderText, change_brightness, get_from_percent
+from src.topData import topData
 
 
 def grid_images(images: list[np.ndarray], width: int, each_image_size=(100, 100)):
@@ -59,6 +59,7 @@ class VideoFaceTrainer:
         self.min_detection_score = 0.85 if min_detection_score is None else min_detection_score
         self.core = 8 if core is None else core
         self.H, self.W = None, None
+        self.num_jitters = 20
 
         mp_face_mesh = mp.solutions.face_mesh
         mp_face_detection = mp.solutions.face_detection
@@ -371,3 +372,4 @@ class FileFaceTrainer:
 if __name__ == "__main__":
     vf = VideoFaceTrainer(uuid4().hex, r"C:\general\Science_project\Science_project_cp39\resources_test_2\known")
     Thread(target=lambda: (vf.run(), vf.write_data_normal_gray())).start()
+
