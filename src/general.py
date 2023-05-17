@@ -3,13 +3,9 @@ Filename: general.py
 Author: Jeerabhat Supapinit
 """
 from __future__ import annotations
-
-from collections import Counter
 import ray
 from PyQt5.QtWidgets import QProgressBar
-from PyQt5 import QtGui, QtMultimedia
 from PyQt5.QtCore import Qt
-from enum import Enum
 import cv2
 import os.path as path
 from collections import Iterable
@@ -22,8 +18,9 @@ import platform
 from PyQt5.QtGui import QPixmap, QFont
 import imutils
 from typing import Callable, Tuple, Union
-import functools
 import glob
+import time
+import threading
 
 
 class AnimateProgressBar(QProgressBar):
@@ -44,7 +41,7 @@ def brightness(im_data_rgb):
         im = Image.fromarray(im_data_rgb)
         stat = ImageStat.Stat(im)
         r, g, b = stat.rms
-        return math.sqrt(0.241 * (r**2) + 0.691 * (g**2) + 0.068 * (b**2))
+        return math.sqrt(0.241 * (r ** 2) + 0.691 * (g ** 2) + 0.068 * (b ** 2))
     else:
         return -1
 
@@ -59,10 +56,39 @@ def convert_cv_qt(cv_img, width, height):
     return QPixmap.fromImage(convert_to_Qt_format)
 
 
-def generate_profile(
-    name: str, image_source: str = "resources/unknown_people.png", font_path: str = "Kanit-Medium.ttf"
-) -> np.ndarray:
+def msg_box(msg, indent=1, width=None, title=None):
+    """Print message-box with optional title."""
+    lines = msg.split('\n')
+    space = " " * indent
+    if not width:
+        width = max(map(len, lines))
+    box = f'╔{"═" * (width + indent * 2)}╗\n'  # upper_border
+    if title:
+        box += f'║{space}{title:<{width}}{space}║\n'  # title
+        box += f'║{space}{"-" * len(title):<{width}}{space}║\n'  # underscore
+    box += ''.join([f'║{space}{line:<{width}}{space}║\n' for line in lines])
+    box += f'╚{"═" * (width + indent * 2)}╝'  # lower_border
+    return box
 
+
+def print_msg_box(msg, indent=1, width=None, title=None):
+    """Print message-box with optional title."""
+    lines = msg.split('\n')
+    space = " " * indent
+    if not width:
+        width = max(map(len, lines))
+    box = f'╔{"═" * (width + indent * 2)}╗\n'  # upper_border
+    if title:
+        box += f'║{space}{title:<{width}}{space}║\n'  # title
+        box += f'║{space}{"-" * len(title):<{width}}{space}║\n'  # underscore
+    box += ''.join([f'║{space}{line:<{width}}{space}║\n' for line in lines])
+    box += f'╚{"═" * (width + indent * 2)}╝'  # lower_border
+    print(box)
+
+
+def generate_profile(
+        name: str, image_source: str = "resources/unknown_people.png", font_path: str = "Kanit-Medium.ttf"
+) -> np.ndarray:
     if name is False:
         return
 
@@ -174,17 +200,17 @@ def convertQImageToMat(incomingImage):
 
 
 def putBorderText(
-    img,
-    text,
-    org,
-    fontFace,
-    fontScale,
-    fg_color,
-    bg_color,
-    thickness,
-    border_thickness=2,
-    lineType=None,
-    bottomLeftOrigin=None,
+        img,
+        text,
+        org,
+        fontFace,
+        fontScale,
+        fg_color,
+        bg_color,
+        thickness,
+        border_thickness=2,
+        lineType=None,
+        bottomLeftOrigin=None,
 ):
     cv2.putText(
         img=img,
@@ -395,11 +421,11 @@ class Direction:
     def is_same(self, direction_: Direction) -> bool:
         max_error_left = (
             lambda degree, error_rate: (degree * ((100 - error_rate) / 100))
-            + (-error_rate if degree > 0 else +error_rate) / 10
+                                       + (-error_rate if degree > 0 else +error_rate) / 10
         )
         max_error_right = (
             lambda degree, error_rate: degree * ((100 + error_rate) / 100)
-            + (error_rate if degree > 0 else -error_rate) / 10
+                                       + (error_rate if degree > 0 else -error_rate) / 10
         )
         min_x = min(max_error_left(self.degree_x, self.error_rate_x), max_error_right(self.degree_x, self.error_rate_x))
         max_x = max(max_error_left(self.degree_x, self.error_rate_x), max_error_right(self.degree_x, self.error_rate_x))
@@ -463,11 +489,11 @@ def scan_files(directory: str, extension: str = ".pkl") -> list[str]:
 
 class PushButton(QtWidgets.QPushButton):
     def __init__(
-        self,
-        parent=None,
-        base_color="#0b1615",
-        changed_color="#1bb77b",
-        style_sheet="""background-color: %s;
+            self,
+            parent=None,
+            base_color="#0b1615",
+            changed_color="#1bb77b",
+            style_sheet="""background-color: %s;
             border: none;
             border-radius: 10px;
             color: %s;
@@ -477,8 +503,8 @@ class PushButton(QtWidgets.QPushButton):
             font: bold \"Kanit\";
             font-size: {self.font_size}px;
             margin: 4px 2px;""",
-        foreground_base_color="#637173",
-        foreground_changed_color="black",
+            foreground_base_color="#637173",
+            foreground_changed_color="black",
     ):
         super().__init__(parent)
         self._animation = QtCore.QVariantAnimation(
@@ -527,3 +553,31 @@ class PushButton(QtWidgets.QPushButton):
         self._animation.setDirection(QtCore.QAbstractAnimation.Forward)
         self._animation.start()
         super().leaveEvent(event)
+
+
+class RepeatedTimer(object):
+    def __init__(self, interval, function, *args, **kwargs):
+        self._timer = None
+        self.interval = interval
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+        self.is_running = False
+        self.next_call = time.time()
+        self.start()
+
+    def _run(self):
+        self.is_running = False
+        self.start()
+        self.function(*self.args, **self.kwargs)
+
+    def start(self):
+        if not self.is_running:
+            self.next_call += self.interval
+            self._timer = threading.Timer(self.next_call - time.time(), self._run)
+            self._timer.start()
+            self.is_running = True
+
+    def stop(self):
+        self._timer.cancel()
+        self.is_running = False

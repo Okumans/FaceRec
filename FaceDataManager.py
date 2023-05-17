@@ -56,8 +56,9 @@ class App(QMainWindow):
     def __init__(self, target_directory: str):
         super().__init__()
         self.target_directory = target_directory
-        self.db = DataBase("Students", certificate_path="src/resources/serviceAccountKey.json")
+        self.db = DataBase("Students", certificate_path=path.dirname(__file__)+"/src/resources/serviceAccountKey.json")
         self.db.offline_db_folder_path = self.target_directory
+        self.storage = self.db.Storage(cache=CACHE_PATH)
         self.result = {}
         self.current: str = ""  # current person data (ID)
         self.current_filename: str = ""  # current filename for image (ndarray)
@@ -260,7 +261,7 @@ class App(QMainWindow):
 
     def load_image_passive(self):
         for index, ID in enumerate(deepcopy(self.face_data_info_loaded)):
-            load_image = self.db.Storage().get_image(ID)
+            load_image = self.storage.smart_get_image(ID)
             if load_image is not None and load_image is not False and load_image.any():
                 self.id_navigation[ID]["image_box"].setPixmap(
                     general.round_Pixmap(
@@ -287,7 +288,10 @@ class App(QMainWindow):
                 else:
                     print("error bro")
 
-            image = general.generate_profile(ID, unknown_image_source, font_path)
+            image = self.storage.get_cache_image(ID)
+            if image is None:
+                image = general.generate_profile(ID, unknown_image_source, font_path)
+
             layout, img_box, message_box = self.new_info_box(
                 f"<font size=8><b>{ID} [{face_data_loaded[ID]['data_amount']}]</font>", image, ID
             )
@@ -499,7 +503,9 @@ class App(QMainWindow):
         )
 
         if self.current_filename:
-            self.db.Storage().add_image(ID=ID, filename=self.current_filename, resize=(86, 86))
+            self.storage.add_image(ID=ID, filename=self.current_filename, resize=(86, 86))
+            self.storage.add_image(ID=ID+"_HIGHRES", filename=self.current_filename, resize=(360, 360))
+            print(ID+"_HIGHRES")
 
         if self.current_filename:
             self.id_navigation[self.current]["image_box"].setPixmap(
@@ -593,7 +599,7 @@ class App(QMainWindow):
 
     def info_box_popup(self, ID):
         def load_image_later():
-            load_image = self.db.Storage().get_image(ID)
+            load_image = self.storage.smart_get_image(ID)
             if load_image is not None and load_image is not False and load_image.any():
                 image = load_image
                 self.image_label.setPixmap(
@@ -774,6 +780,7 @@ def importer():
 
 
 if __name__ == "__main__":
+    CACHE_PATH = path.dirname(__file__) + "/cache"
     preload_face_reg_model = False
     # True: load model before starting program -> use a lot of memory bet best for training new face
     # False: load model when start training -> use less memory but slow when start training
@@ -781,9 +788,9 @@ if __name__ == "__main__":
         from src.FaceTrainer_new import VideoFaceTrainer, FileFaceTrainer
     Thread(target=importer).start()
 
-    unknown_image_source = "src/resources/unknown_people.png"
-    image_error_source = "src/resources/image_error.png"
-    font_path = "src/resources/Kanit-Medium.ttf"
+    unknown_image_source = path.dirname(__file__)+"/src/resources/unknown_people.png"
+    image_error_source = path.dirname(__file__)+"/src/resources/image_error.png"
+    font_path = path.dirname(__file__)+"/src/resources/Kanit-Medium.ttf"
 
     image_error = cv2.imread(image_error_source)
     unknown_image = cv2.imread(unknown_image_source)
@@ -791,6 +798,6 @@ if __name__ == "__main__":
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
-    a = App(r"recognition_resources")
+    a = App(path.dirname(__file__)+"/recognition_resources")
     a.show()
     sys.exit(app.exec_())

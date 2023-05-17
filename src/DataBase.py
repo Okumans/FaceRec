@@ -1,4 +1,5 @@
 import shelve
+import shutil
 import warnings
 import google_auth_httplib2
 import firebase_admin
@@ -10,6 +11,7 @@ from PIL import Image, ImageOps
 from io import BytesIO
 import time
 import requests
+from datetime import timedelta
 
 
 def check_internet():
@@ -24,30 +26,90 @@ class DataBase:
     default = ("", "", "", 0, "", 0, 0, 0, [])
 
     class Storage:
-        def __init__(self):
+        def __init__(self, cache=None):
             self.bucket = storage.bucket()
             self.internet = check_internet()
+            self.cache: str = cache
 
         def add_image(self, ID, filename, resize):
             if path.exists(filename):
                 with BytesIO() as f:
                     img = Image.open(filename)
                     img = ImageOps.contain(img, resize)
+                    if self.cache is not None:
+                        img.save(self.cache + f"/{ID}.png", format="png")
                     img.save(f, format="png")
                     img = f.getvalue()
+
                 self.bucket.blob(ID).upload_from_string(img, content_type="image/png")
 
+        def add_image_data(self, ID, data, resize):
+            with BytesIO() as f:
+                img = Image.fromarray(data)
+                img = ImageOps.contain(img, resize)
+                if self.cache is not None:
+                    img.save(self.cache + f"/{ID}.png", format="png")
+                img.save(f, format="png")
+                img = f.getvalue()
+            self.bucket.blob(ID).upload_from_string(img, content_type="image/png")
+
         def exists(self, ID):
-            return not not self.bucket.get_blob(ID + ".png")
+            return self.bucket.get_blob(ID) is not None
 
         def get_image(self, ID):
+            if self.cache is not None and path.exists(self.cache + f"/{ID}.png"):
+                return cv2.imread(self.cache + f"/{ID}.png")
+
             if self.internet:
                 blob = self.bucket.get_blob(ID)
                 if blob is None or blob is False:
                     return
-                return cv2.imdecode(np.frombuffer(blob.download_as_string(), np.uint8), cv2.COLOR_BGRA2BGR)
+                image = cv2.imdecode(np.frombuffer(blob.download_as_string(), np.uint8), cv2.COLOR_BGRA2BGR)
+                cv2.imwrite(self.cache + f"/{ID}.png", image)
+                return image
             else:
                 return cv2.imread(path.dirname(__file__) + r"\resources\image_error.png")
+
+        def smart_get_image(self, ID):
+            if self.cache is not None:
+                if path.exists(self.cache + f"/{ID}_HIGHRES.png"):
+                    print("yee")
+                    return cv2.imread(self.cache + f"/{ID}_HIGHRES.png")
+                if path.exists(self.cache + f"/{ID}.png"):
+                    return cv2.imread(self.cache + f"/{ID}.png")
+            return self.get_image(ID)
+
+        def get_cache_image(self, ID):
+            if self.cache is not None:
+                if path.exists(self.cache + f"/{ID}_HIGHRES.png"):
+                    return cv2.imread(self.cache + f"/{ID}_HIGHRES.png")
+                if path.exists(self.cache + f"/{ID}.png"):
+                    return cv2.imread(self.cache + f"/{ID}.png")
+            return None
+
+        def get_image_link(self, ID):
+            return self.bucket.blob(ID).generate_signed_url(timedelta(seconds=300), method='GET')
+
+        def add_encoding(self, ID, encoding: str):
+            self.bucket.blob("encoded/" + ID).upload_from_string(encoding.encode(encoding="unicode_escape"),
+                                                                 content_type="application/octet-stream")
+
+        def add_encoding_file(self, ID, filename):
+            self.bucket.blob("encoded/" + ID).upload_from_filename(filename)
+
+        def get_encoding(self, ID):
+            if self.internet:
+                blob = self.bucket.get_blob("encoded/" + ID)
+                if blob is None or blob is False:
+                    return
+                data = blob.download_as_string()
+                return data
+
+        def delete(self, IDD):
+            self.bucket.delete_blob(IDD)
+
+        def delete_encoding(self, IDD):
+            self.bucket.delete_blob("encoded/" + IDD)
 
     @staticmethod
     def check_certificate(certificate_path):
@@ -61,7 +123,8 @@ class DataBase:
                 },
             )
 
-    def __init__(self, database_name, sync_with_offline_db=False, certificate_path="src/serviceAccountKey.json"):
+    def __init__(self, database_name, sync_with_offline_db=False,
+                 certificate_path="src/resources/serviceAccountKey.json"):
         self.check_certificate(certificate_path)
 
         self.db_name = database_name
@@ -117,18 +180,18 @@ class DataBase:
             return False
 
     def add_data(
-        self,
-        ID: str,
-        realname: str,
-        surname: str,
-        nickname: str,
-        student_id: int,
-        student_class: str,
-        class_number: int,
-        active_days: int,
-        last_checked: int,
-        graph_info: list,
-        **kwargs
+            self,
+            ID: str,
+            realname: str,
+            surname: str,
+            nickname: str,
+            student_id: int,
+            student_class: str,
+            class_number: int,
+            active_days: int,
+            last_checked: int,
+            graph_info: list,
+            **kwargs
     ):
         # update database
         print(f"database add {ID}.")

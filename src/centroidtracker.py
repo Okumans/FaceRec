@@ -16,7 +16,7 @@ from json import loads, dumps
 from pickle import load as pkl_load
 from pickle import dump as pkl_dump
 from os.path import exists
-from src.FaceAntiSpoofing.demo import demo
+
 from src.liveness_detection import LivenessDetection
 
 
@@ -54,7 +54,7 @@ class CentroidTracker:
         self.remember_unknown_face = remember_unknown_face
         self.remember_unknown_face_maximum_confidence = 0.48
         self.liveness_threshold = .50
-        self.liveness_check = True
+        self.liveness_check = otherSetting["liveness_detection"]
         self.last_deregister = general.rayDict.remote()
         self.recognition_progress = general.rayDict.remote()
         self.pre_face_encodings = general.rayDict.remote()
@@ -121,7 +121,8 @@ class CentroidTracker:
                     self.pre_face_encodings.set.remote(most_common["name"], encodings)
                 # check_name = most_common["name"]
             self.is_checked.set.remote(objectID, True)
-            if liveness.get() < self.liveness_threshold and most_common["name"] is not False and self.liveness_check:
+            if liveness.get() < self.liveness_threshold and most_common["name"] is not False and self.liveness_check \
+                    and liveness.length:
                 check_name = "attacked:" + check_name
             self.objects_names.set.remote(objectID, check_name)
 

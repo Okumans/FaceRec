@@ -1,8 +1,10 @@
 from __future__ import annotations
-from typing import Union, Any, Callable
+from typing import *
 from src.attendant_graph import Arrange, AttendantGraph
 from datetime import datetime
 from src.DataBase import DataBase
+from uuid import uuid4
+import tabulate
 
 
 class Student:
@@ -22,6 +24,7 @@ class Student:
     STUDENT_ATTENDANT_GRAPH_DATA = "graph_info"
 
     def __init__(self,
+                 IDD: str = None,
                  firstname: str = None,
                  lastname: str = None,
                  nickname: str = None,
@@ -29,8 +32,9 @@ class Student:
                  student_class: str = None,
                  student_class_number: int = None,
                  last_checked: datetime = None,
-                 student_attendant_graph_data: list[datetime, ...] = None,
+                 student_attendant_graph_data: List[datetime] = None,
                  late_checked_hour_minute: Union[tuple[int, int], None] = None):
+        self.IDD: str = uuid4().hex if IDD is None else IDD
         self.firstname: str = "" if firstname is None else firstname
         self.lastname: str = "" if lastname is None else lastname
         self.nickname: str = "" if nickname is None else nickname
@@ -39,7 +43,7 @@ class Student:
         self.student_class_number = 0 if student_class_number is None else student_class_number
         self.active_days = 0
         self.last_checked: datetime = datetime.fromtimestamp(0) if last_checked is None else last_checked
-        self._student_attendant_graph_data: list[datetime, ...] = [] if student_attendant_graph_data is None else \
+        self._student_attendant_graph_data: List[datetime] = [] if student_attendant_graph_data is None else \
             student_attendant_graph_data
         self.late_checked: Callable[[datetime, int, int], datetime] = \
             lambda consider_datetime: datetime(year=consider_datetime.year,
@@ -68,6 +72,7 @@ class Student:
 
     def __repr__(self):
         return f"Student(" \
+               f"IDD: {self.IDD}" \
                f"firstname: '{self.firstname}', " \
                f"lastname: '{self.lastname}', " \
                f"nickname: '{self.nickname}', " \
@@ -75,8 +80,29 @@ class Student:
                f"student_class: '{self.student_class}', " \
                f"student_class_number: {self.student_class_number}, " \
                f"active_days: {self.active_days}, " \
-               f"last_checked: '{self.last_checked}')" \
+               f"last_checked: '{self.last_checked}')"
 
+    def show_table(self):
+        table: List[List[str]] = [["IDD", self.IDD],
+                                  ["firstname", self.firstname],
+                                  ["lastname", self.lastname],
+                                  ["nickname", self.nickname],
+                                  ["student_id", self.student_id],
+                                  ["student_class", self.student_class],
+                                  ["student_class_number", self.student_class_number]]
+
+        print(tabulate.tabulate(table, tablefmt="fancy_grid"))
+
+    def get_table(self):
+        table: List[List[str]] = [["IDD", self.IDD],
+                                  ["firstname", self.firstname],
+                                  ["lastname", self.lastname],
+                                  ["nickname", self.nickname],
+                                  ["student_id", self.student_id],
+                                  ["student_class", self.student_class],
+                                  ["student_class_number", self.student_class_number]]
+
+        return tabulate.tabulate(table, tablefmt="fancy_grid")
 
     @property
     def realname(self):
@@ -109,6 +135,7 @@ class Student:
 
     def load_from_db(self, db: DataBase, IDD: str):
         student: dict = db.get_data(IDD)
+        self.IDD = IDD
         self.firstname = student[self.FIRSTNAME]
         self.lastname = student[self.LASTNAME]
         self.nickname = student[self.NICKNAME]
@@ -121,18 +148,34 @@ class Student:
         self.__calculate_active_days()
         return self
 
-    def load_from_dict(self, student: dict):
+    def load_from_dict(self, IDD: str, student: dict):
+        self.IDD = IDD
         self.firstname = student[self.FIRSTNAME]
         self.lastname = student[self.LASTNAME]
         self.nickname = student[self.NICKNAME]
         self.student_id = student[self.STUDENT_ID]
         self.student_class = student[self.STUDENT_CLASS]
         self.student_class_number = student[self.STUDENT_CLASS_NUMBER]
-        self.last_checked = datetime.fromtimestamp(student[self.LAST_CHECKED])
+        self.last_checked = datetime.fromtimestamp(student.get(self.LAST_CHECKED, 0))
         self._student_attendant_graph_data = AttendantGraph().load_floats(
             student.get(self.STUDENT_ATTENDANT_GRAPH_DATA, [])).dates
         self.__calculate_active_days()
         return self
+
+    def to_dict(self):
+        student: Dict[str, any] = {
+            "IDD": self.IDD,
+            self.FIRSTNAME: self.firstname,
+            self.LASTNAME: self.lastname,
+            self.NICKNAME: self.nickname,
+            self.STUDENT_ID: self.student_id,
+            self.STUDENT_CLASS: self.student_class,
+            self.STUDENT_CLASS_NUMBER: self.student_class_number,
+            self.LAST_CHECKED: self.last_checked.timestamp() if self.last_checked != datetime.fromtimestamp(0) else 0,
+            self.STUDENT_ATTENDANT_GRAPH_DATA: [i.timestamp() for i in
+                                                self._student_attendant_graph_data] if self._student_attendant_graph_data else []
+        }
+        return student
 
 
 class StudentSorter:
@@ -153,7 +196,7 @@ class StudentSorter:
 
     def __init__(self,
                  data_path: str,
-                 data: Union[dict[Any, ...], None] = None,
+                 data: Union[Dict[Any], None] = None,
                  late_checked_hour_minute: Union[tuple[int, int], None] = None):
 
         self.db: DataBase = DataBase("Students", sync_with_offline_db=True)
@@ -169,28 +212,28 @@ class StudentSorter:
                                                if late_checked_hour_minute is not None else 0
                                                )
 
-        self.__data: dict[str, list[str, ...]] = {}
-        self.__classes: dict[str, list[str, ...]] = {}
-        self.__id_state: dict[str, list[str, ...]] = {}
-        self.__states: dict[str, list[str, ...]] = {}
+        self.__data: dict[str, List[str]] = {}
+        self.__classes: dict[str, List[str]] = {}
+        self.__id_state: dict[str, List[str]] = {}
+        self.__states: dict[str, List[str]] = {}
 
         del self.data["last_update"]
 
     def get(self):
         return self.__data
 
-    def id_to_(self, key: str, data: dict[str, list[str, ...]] = None) -> dict[str, list[str, ...]]:
+    def id_to_(self, key: str, data: dict[str, List[str]] = None) -> dict[str, List[str]]:
         data = self.__data if data is None else data
-        temp_data: dict[str, list[str, ...]] = {}
+        temp_data: dict[str, List[str]] = {}
         for sub_data in data:
             temp_data[sub_data] = []
             for datum in data[sub_data]:
                 temp_data[sub_data].append(self.data[datum].get(key))
         return temp_data
 
-    def id_to_student(self, data: dict[str, list[str, ...]] = None) -> dict[str, list[Student, ...]]:
+    def id_to_student(self, data: dict[str, List[str]] = None) -> dict[str, List[Student]]:
         data = self.__data if data is None else data
-        temp_data: dict[str, list[Student, ...]] = {}
+        temp_data: dict[str, List[Student]] = {}
         for sub_data in data:
             temp_data[sub_data] = []
             for datum in data[sub_data]:
@@ -236,7 +279,7 @@ class StudentSorter:
 
             self.__states[state].append(student)
             self.__states[state].sort(key=lambda i: int(self.data[i][self.STUDENT_ID])
-                                      if self.data[i][self.STUDENT_ID] != 0 else 9999999)
+            if self.data[i][self.STUDENT_ID] != 0 else 9999999)
         self.__data = self.__states
         return self
 

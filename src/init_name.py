@@ -85,8 +85,11 @@ def name_information_init(data_path: str, name_information: str, certificate_pat
         filename = path.basename(path.splitext(file)[0])
         if filename not in name_information_data and "unknown:" + filename not in name_information_data:
             with open(file, "rb") as f:
-                ID = pickle.loads(f.read())["id"]
-                name_information_data[ID] = filename
+                try:
+                    ID = pickle.loads(f.read())["id"]
+                    name_information_data[ID] = filename
+                except pickle.UnpicklingError:
+                    raise pickle.UnpicklingError(f"unpickling error at file \"{file}\"")
 
         if db.get_data(filename) is None and db.get_data("unknown:" + filename) is None:
             print(path.basename(path.dirname(file)))

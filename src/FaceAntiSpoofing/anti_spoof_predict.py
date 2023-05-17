@@ -12,9 +12,14 @@ import onnxruntime
 import os.path as path
 import warnings
 
-from src.FaceAntiSpoofing.model_lib.MiniFASNet import MiniFASNetV1, MiniFASNetV2, MiniFASNetV1SE, MiniFASNetV2SE
-from src.FaceAntiSpoofing.data_io import transform as trans
-from src.FaceAntiSpoofing.utility import get_kernel, parse_model_name
+try:
+    from src.FaceAntiSpoofing.model_lib.MiniFASNet import MiniFASNetV1, MiniFASNetV2, MiniFASNetV1SE, MiniFASNetV2SE
+    from src.FaceAntiSpoofing.data_io import transform as trans
+    from src.FaceAntiSpoofing.utility import get_kernel, parse_model_name
+except ModuleNotFoundError:
+    from model_lib.MiniFASNet import MiniFASNetV1, MiniFASNetV2, MiniFASNetV1SE, MiniFASNetV2SE
+    from data_io import transform as trans
+    from utility import get_kernel, parse_model_name
 
 warnings.filterwarnings("ignore", category=UserWarning)
 

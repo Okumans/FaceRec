@@ -49,7 +49,8 @@ def process_image(info, num_jitters=20, model="large"):
     return face_encodings
 
 
-ray.init()
+if __name__ == "__main__":
+    ray.init()
 
 
 class VideoFaceTrainer:
