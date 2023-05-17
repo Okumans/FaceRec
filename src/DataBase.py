@@ -1,5 +1,5 @@
 import shelve
-import shutil
+from typing import *
 import warnings
 import google_auth_httplib2
 import firebase_admin
@@ -227,7 +227,7 @@ class DataBase:
                 self.ref.child(key).set(values)
             self.ref.child("last_update").set(update_time)
 
-    def quick_get_data(self, ID: str) -> dict:
+    def quick_get_data(self, ID: str) -> Dict:
         if not self.sync_with_offline_db:
             warnings.warn("sync_with_offline_db is not turned on.")
             return self.ref.child(ID).get()
@@ -235,7 +235,7 @@ class DataBase:
             with shelve.open(self.offline_db_folder_path + "/" + self.db_name) as off_db:
                 return off_db.get(ID)
 
-    def get_data(self, ID: str) -> dict:
+    def get_data(self, ID: str) -> Dict:
         try:
             return self.ref.child(ID).get()
         except google_auth_httplib2.exceptions.TransportError:

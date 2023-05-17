@@ -17,7 +17,7 @@ import ctypes
 import platform
 from PyQt5.QtGui import QPixmap, QFont
 import imutils
-from typing import Callable, Tuple, Union
+from typing import *
 import glob
 import time
 import threading
@@ -163,7 +163,7 @@ class Average:
         self.result = 0
 
 
-def Most_Common(dtc) -> dict:
+def Most_Common(dtc) -> Dict:
     max_con = {"name": "", "confidence": -100000}
     for i in dtc:
         avg = sum(dtc[i]) / len(dtc[i])
@@ -469,8 +469,8 @@ def make_dpi_aware():
         ctypes.windll.shcore.SetProcessDpiAwareness(True)
 
 
-def scan_files(directory: str, extension: str = ".pkl") -> list[str]:
-    def dfs(_directory: str, _file_type: str) -> list:
+def scan_files(directory: str, extension: str = ".pkl") -> List[str]:
+    def dfs(_directory: str, _file_type: str) -> List:
         if path.isdir(_directory):
             _files: list[str] = []
             for _file in glob.glob(_directory + "\\*"):
