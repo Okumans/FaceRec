@@ -1,6 +1,8 @@
+import google.cloud.storage.blob
+
 import src.triple_gems
 import warnings
-from PyQt5 import QtGui
+from PyQt5 import QtGui, QtMultimedia, QtMultimediaWidgets
 from PyQt5.QtWidgets import (
     QWidget,
     QApplication,
@@ -12,6 +14,7 @@ from PyQt5.QtWidgets import (
     QSpacerItem,
     QMainWindow,
     QBoxLayout,
+    QSplitter
 )
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtCore import (
@@ -35,69 +38,45 @@ from copy import deepcopy
 from shutil import move
 from datetime import datetime
 from pyautogui import size
-from os.path import exists
-from os import mkdir, listdir
+import os.path as path
+from os import mkdir, listdir, system
 import cv2
 import ray
 from ray.exceptions import GetTimeoutError
 import mediapipe as mp
 from mss import mss
 from threading import Thread
-from json import dumps, loads
-from pathlib import Path
+from json import dumps, loads, decoder
+import json
+from typing import *
 import logging
 from src import ui_popup  # for setting popup
 from src import ui_popup2  # for infobox popup
 from src import general
 from src.scrollbar_style import scrollbar_style
 from src.init_name import name_information_init, remove_expire_unknown_faces
-from src.general import Color, get_from_percent
+from src.general import Color, get_from_percent, RepeatedTimer
 from src.ShadowRemoval import remove_shadow_grey
 from src.FaceAlignment import face_alignment
-from src.liveness_detection import LivenessDetection, predict
 from src.DataBase import DataBase
 from src.contamination_scanner import ContaminationScanner
 from src.attendant_graph import AttendantGraph, Arrange
+from src.studentSorter import Student
+from tabulate import tabulate
 
 warnings.filterwarnings("ignore")
 from src.centroidtracker import CentroidTracker
 
 # -----------------setting-----------------
-setting = dict()
-setting["project_path"] = r"C:\general\Science_project\Science_project_cp39_refactor"
-setting["face_reg_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
-setting["db_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\recognition_resources"
-setting[
-    "db_cred_path"] = r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\serviceAccountKey.json"
-setting["name_map_path"] = setting["face_reg_path"] + r"\name_information.json"
-setting["font"] = "Kanit"
-setting["autoBrightnessContrast"] = False
-setting["sharpness_filter"] = False
-setting["gray_mode"] = False
-setting["debug"] = False
-setting["liveness_detection"] = True
-setting["fps_show"] = False
-setting["average_fps"] = True
-setting["remember_unknown_face"] = True
-setting["save_as_video"] = False
-setting["face_alignment"] = False
-setting["video_source"] = 0
-setting["min_detection_confidence"] = 0.7
-setting["min_recognition_confidence"] = 0.55
-setting["min_liveness_confidence"] = 0.7
-setting["min_faceBlur_detection"] = 24  # low = rgb(175, 0, 0)blur, high = not blur
-setting["autoBrightnessValue"] = 80  # from 0 to 255
-setting["autoContrastValue"] = 30  # from 0 to 255
-setting["face_check_amount"] = 1
-setting["face_max_disappeared"] = 10
-setting["night_mode_brightness"] = 40
-setting["cpu_amount"] = 8
-setting["resolution"] = 1
-setting["rotate_frame"] = 0
-setting["base_resolution"] = (0, 0)
+try:
+    with open("settings.json", "r") as f:
+        setting = json.load(f)
+except FileNotFoundError:
+    print("setting not found!, please run setup.py first.")
+    quit()
 
-use_folder = [setting['project_path'], setting["face_reg_path"], setting["face_reg_path"] + r"\unknown",
-              setting["face_reg_path"] + r"\known"]
+use_folder = [setting['project_path'], setting["face_reg_path"], setting["face_reg_path"] + r"/unknown",
+              setting["face_reg_path"] + r"/known", setting['project_path'] + r"/cache"]
 
 RAY_TIMEOUT = 0.005
 
@@ -108,13 +87,13 @@ if __name__ == "__main__":
 
     # check if using folder is available
     for folder_path in use_folder:
-        if not exists(folder_path):
+        if not path.exists(folder_path):
             mkdir(folder_path)
 
     name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
-    remove_expire_unknown_faces(setting["face_reg_path"])
-    ContaminationScanner(setting["face_reg_path"], .65).scan()
-    ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
+    # remove_expire_unknown_faces(setting["face_reg_path"])
+    # ContaminationScanner(setting["face_reg_path"], .65).scan()
+    # ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
 
     mp_face_detection = mp.solutions.face_detection
     mp_face_mesh = mp.solutions.face_mesh
@@ -157,6 +136,7 @@ class VideoThread(QThread):
         self.db.offline_db_folder_path = setting["face_reg_path"]
         self.run: bool = True
         self.frame_index: int = 0
+        self.objname_map: Dict[int, any] = {}
         self.avg_fps: general.Average = general.Average([0], calculate_amount=100)
 
         if self.video_type == "screen":
@@ -282,7 +262,8 @@ class VideoThread(QThread):
 
                         distance: float = ((H * setting["resolution"] * W * setting["resolution"]) / 518400) * (
                                 ((face_image.shape[1] + face_image.shape[0]) / 2) / 220.39
-                        ) ** (1 / -0.949)
+                        )
+                        distance = distance ** (1 / -0.949) if distance != 0 else 1000000000000000
                         # check if face data is enough for face recognizing
                         if face_height >= 60:
                             rects.append({box: (detection.score[0], face_image)})
@@ -326,22 +307,9 @@ class VideoThread(QThread):
                                 3,
                             )
 
-                            # liveness = demo(face_image)
-                            # general.putBorderText(
-                            #     image,
-                            #     f"liveness_model1: {1-liveness if liveness < setting['min_liveness_confidence'] else liveness}"
-                            #     f"-> {'REAL' if liveness < setting['min_liveness_confidence'] else 'FAKE ATTACK'}",
-                            #     (int(box[0]), int(box[1]) - 28),
-                            #     cv2.FONT_HERSHEY_SIMPLEX,
-                            #     0.5,
-                            #     (255, 0, 0),
-                            #     (0, 0, 0),
-                            #     2,
-                            #     3,
-                            # )
                             general.putBorderText(
                                 image,
-                                f"{LivenessDetection().predict(face_image)}",
+                                f"Not supported",
                                 (int(box[0]), int(box[1]) - 48),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.5,
@@ -363,7 +331,7 @@ class VideoThread(QThread):
                             image,
                             (int(box[0] / setting["resolution"]), int(box[1] / setting["resolution"])),
                             (int(box[2] / setting["resolution"]), int(box[3] / setting["resolution"])),
-                            text_color if 0.3 <= distance <= 3.5 and face_height >= 60 else (255, 0, 0),
+                            text_color,  # if 0.3 <= distance <= 3.5 and face_height >= 60 else (255, 0, 0),
                             3,
                         )
 
@@ -388,112 +356,117 @@ class VideoThread(QThread):
                 # get data including names and progress from another process if it takes less time than the timeout
                 # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
 
-                st = time.time()
+                update_current_identity = True
+
                 try:
                     names = ray.get(ct.objects_names.get_all.remote(), timeout=RAY_TIMEOUT)
                     progresses = ray.get(ct.recognition_progress.get_all.remote(), timeout=RAY_TIMEOUT)
                 except GetTimeoutError:
-                    continue
+                    update_current_identity = False
 
                 # update current identity to the gui
-                for i in objects_ids:
-                    name = names.get(i)
-                    progress = progresses.get(i)
+                if update_current_identity:
+                    for i in objects_ids:
+                        name = names.get(i)
+                        progress = progresses.get(i)
 
-                    if name == "IN_PROCESS":
-                        self.change_infobox_message_signal.emit(
-                            {
-                                "name": name,
-                                "ID": i,
-                                "image": ct.objects_data[i].get()[0],
-                                "progress": progress,
-                            }
-                        )
-                    else:
-                        if (name not in [
+                        if name == "IN_PROCESS":
+                            self.change_infobox_message_signal.emit(
+                                {
+                                    "name": name,
+                                    "ID": i,
+                                    "image": ct.objects_data[i].get()[0],
+                                    "progress": progress,
+                                }
+                            )
+                        else:
+                            if (name not in [
                                 "UNKNOWN",
                                 "CHECKED_UNKNOWN",
                                 "__UNKNOWN__",
                                 None,
                                 False,
                                 ""
-                        ] and already_check[i] is False):
+                            ] and already_check[i] is False):
 
-                            already_check[i] = True
-                            ct.last_deregister.delete.remote(i)
+                                already_check[i] = True
+                                ct.last_deregister.delete.remote(i)
 
-                            if name != ct.recognizer.unknown and not name.startswith("attacked:"):
-                                data = self.db.get_data(name)
-                                if data is None:
-                                    self.db.add_data(name, *DataBase.default)
+                                if name != ct.recognizer.unknown and not name.startswith("attacked:"):
                                     data = self.db.get_data(name)
+                                    if data is None:
+                                        self.db.add_data(name, *DataBase.default)
+                                        data = self.db.get_data(name)
 
-                                now_time = time.time()
-                                graph_info = data.get("graph_info") if data.get("graph_info") is not None else []
-                                graph_info.append(now_time)
-                                self.db.update(name, last_checked=now_time, graph_info=graph_info)
+                                    now_time = time.time()
+                                    graph_info = data.get("graph_info") if data.get("graph_info") is not None else []
+                                    graph_info.append(now_time)
+                                    self.db.update(name, last_checked=now_time, graph_info=graph_info)
 
-                            self.change_infobox_message_signal.emit(
-                                {
-                                    "name": name,
-                                    "ID": i,
-                                    "image": ct.objects_data[i].get()[0],
-                                    "progress": 0.9999,
-                                }
-                            )
+                                self.change_infobox_message_signal.emit(
+                                    {
+                                        "name": name,
+                                        "ID": i,
+                                        "image": ct.objects_data[i].get()[0],
+                                        "progress": 0.9999,
+                                    }
+                                )
 
-                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
-                # get last_deregister from another process if it takes less time than the timeout
+                    # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "process..")
+                    # get last_deregister from another process if it takes less time than the timeout
 
-                # st = time.time()
+                    # st = time.time()
 
-                try:
-                    last_deregister = ray.get(ct.last_deregister.get_all.remote(), timeout=RAY_TIMEOUT)
-                except GetTimeoutError:
-                    continue
+                    update_identity_gui = True
 
-                # update the all the identity to the gui
-                for i in last_deregister.items():
-                    last_objects_names = i[1].get("name")
-                    progress = progresses.get(i[0])
-                    if last_objects_names is not None and already_check[i[0]] is False:
-                        already_check[i[0]] = True
-                        ct.last_deregister.delete.remote(i[0])
-                        try:
-                            last_objects_data = i[1]["img"].get()[0]
-                        except IndexError:
-                            last_objects_data = image_error
+                    try:
+                        last_deregister = ray.get(ct.last_deregister.get_all.remote(), timeout=RAY_TIMEOUT)
+                    except GetTimeoutError:
+                        update_identity_gui = False
 
-                        if last_objects_names not in [False, "UNKNOWN??", ""] and \
-                                not last_objects_names.startswith("attacked:"):
-                            data = self.db.get_data(last_objects_names)
-                            if data is None:
-                                self.db.add_data(last_objects_names, *DataBase.default)
-                                data = self.db.get_data(last_objects_names)
+                    # update the all the identity to the gui
+                    if update_identity_gui:
+                        for i in last_deregister.items():
+                            last_objects_names = i[1].get("name")
+                            progress = progresses.get(i[0])
+                            if last_objects_names is not None and already_check[i[0]] is False:
+                                already_check[i[0]] = True
+                                ct.last_deregister.delete.remote(i[0])
+                                try:
+                                    last_objects_data = i[1]["img"].get()[0]
+                                except IndexError:
+                                    last_objects_data = image_error
 
-                            now_time = time.time()
-                            graph_info = data.get("graph_info") if data.get("graph_info") is not None else []
-                            graph_info.append(now_time)
-                            self.db.update(last_objects_names, last_checked=now_time, graph_info=graph_info)
+                                if last_objects_names not in [False, "UNKNOWN??", ""] and \
+                                        not last_objects_names.startswith("attacked:"):
+                                    data = self.db.get_data(last_objects_names)
+                                    if data is None:
+                                        self.db.add_data(last_objects_names, *DataBase.default)
+                                        data = self.db.get_data(last_objects_names)
 
-                        self.change_infobox_message_signal.emit(
-                            {
-                                "name": last_objects_names,
-                                "ID": i[0],
-                                "image": last_objects_data,
-                                "last": True,
-                                "progress": 0.9999,
-                            }
-                        )
+                                    now_time = time.time()
+                                    graph_info = data.get("graph_info") if data.get("graph_info") is not None else []
+                                    graph_info.append(now_time)
+                                    self.db.update(last_objects_names, last_checked=now_time, graph_info=graph_info)
 
-                    elif already_check[i[0]] is False:
-                        self.change_infobox_message_signal.emit(
-                            {
-                                "name": last_objects_names,
-                                "ID": i[0],
-                                "progress": progress,
-                            }
-                        )
+                                self.change_infobox_message_signal.emit(
+                                    {
+                                        "name": last_objects_names,
+                                        "ID": i[0],
+                                        "image": last_objects_data,
+                                        "last": True,
+                                        "progress": 0.9999,
+                                    }
+                                )
+
+                            elif already_check[i[0]] is False:
+                                self.change_infobox_message_signal.emit(
+                                    {
+                                        "name": last_objects_names,
+                                        "ID": i[0],
+                                        "progress": progress,
+                                    }
+                                )
 
                 # put some text to the image; text consists of index (objectID): the current index of the students
                 #                                              IDD (name): the ID of the identity
@@ -502,12 +475,21 @@ class VideoThread(QThread):
 
                 # st = time.time()
                 for (objectID, centroid) in objects.items():
+
+                    if not update_current_identity:
+                        name = "IN_PROGRESS"
+                    else:
+                        name = (
+                            general.Most_Common(names.get(objectID))
+                            if type(names.get(objectID)) == list
+                            else names.get(objectID)
+                        )
+
+                    if self.objname_map.get(objectID) is None and update_current_identity:
+                        self.objname_map[objectID] = name
+
                     text = "ID [{}]".format(objectID)
-                    name = (
-                        general.Most_Common(names.get(objectID))
-                        if type(names.get(objectID)) == list
-                        else names.get(objectID)
-                    )
+
                     general.putBorderText(
                         image,
                         text,
@@ -524,7 +506,7 @@ class VideoThread(QThread):
                                     "UNKNOWN",
                                     "__UNKNOWN__",
                                     "CHECKED_UNKNOWN",
-                                    "UNKNOWN??"] and not name.startswith("attacked:"):
+                                    "UNKNOWN??"] and not name.startswith("attacked:") and update_current_identity:
 
                         if self.db.quick_get_data(name).get("parent") is None:
                             self.db.update(name, parent=name)
@@ -615,17 +597,15 @@ class App(QWidget):
         parent.resize(1336, 553)
         parent.setStyleSheet("background-color: #0b1615;")
 
-        self.centralwidget = QWidget(parent)
-        self.horizontalLayout = QHBoxLayout(self.centralwidget)
+        self.centralwidget = QSplitter(Qt.Horizontal)
 
-        self.image_label = QLabel(self.centralwidget)
-        sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(1)
+        self.image_label = QLabel()
+        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         sizePolicy.setHeightForWidth(self.image_label.sizePolicy().hasHeightForWidth())
         self.image_label.setSizePolicy(sizePolicy)
-        self.image_label.setMinimumSize(QSize(640, 480))
-        self.image_label.setMaximumSize(QSize(640 * 3, 480 * 3))
+        self.image_label.setMaximumWidth(int(2 * parent.width() / 3))
+        self.image_label.setMinimumWidth(480 / 2)
+
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
             "padding-top: 15px;\n"
@@ -634,20 +614,40 @@ class App(QWidget):
             "border-radius: 10px;"
         )
         self.image_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
-        self.setting_button = general.PushButton(self.centralwidget)
+
+        self.setting_button = general.PushButton()
         self.setting_button.setIcon(QIcon(setting["project_path"] + "/src/resources/setting.png"))
         self.setting_button.setIconSize(QSize(30, 30))
         self.setting_button.setMaximumSize(QSize(60, 99999999))
-
         self.setting_button.clicked.connect(self.handle_dialog)
         self.setting_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.verticalLayout_1 = QVBoxLayout(self.centralwidget)
-        self.verticalLayout_1.addWidget(self.image_label)
-        self.verticalLayout_1.addWidget(self.setting_button)
-        self.verticalLayout_1.addItem(QSpacerItem(10, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
-        self.horizontalLayout.addLayout(self.verticalLayout_1)
 
-        self.scrollArea = QScrollArea(self.centralwidget)
+        self.face_data_manager_button = general.PushButton()
+        self.face_data_manager_button.setIcon(QIcon(setting["project_path"] + "/src/resources/manager.png"))
+        self.face_data_manager_button.setIconSize(QSize(30, 30))
+        self.face_data_manager_button.setMaximumSize(QSize(60, 99999999))
+        self.face_data_manager_button.clicked.connect(self.start_face_data_manager)
+        self.face_data_manager_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
+        button_group_layout = QHBoxLayout()
+        button_group_layout.addWidget(self.setting_button)
+        button_group_layout.addWidget(self.face_data_manager_button)
+        button_group = QWidget()
+        button_group.setLayout(button_group_layout)
+        button_group.setStyleSheet(
+            "background: rgba(255, 255, 255, 0.1);"
+            "border-radius: 10px;"
+        )
+        button_group_stretch_layout = QHBoxLayout()
+        button_group_stretch_layout.addWidget(button_group)
+        button_group_stretch_layout.addStretch()
+
+        self.verticalLayout_1 = QVBoxLayout()
+        self.verticalLayout_1.addWidget(self.image_label)
+        self.verticalLayout_1.addLayout(button_group_stretch_layout)
+        self.verticalLayout_1.addItem(QSpacerItem(10, 10, QSizePolicy.Preferred, QSizePolicy.Expanding))
+
+        self.scrollArea = QScrollArea()
         sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -668,15 +668,27 @@ class App(QWidget):
         self.verticalLayout.setDirection(QBoxLayout.BottomToTop)
 
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
-        self.horizontalLayout.addWidget(self.scrollArea)
         self.scrollArea.raise_()
         self.image_label.raise_()
+        self.cameraVerticalLayout = QWidget()
+        self.cameraVerticalLayout.setLayout(self.verticalLayout_1)
+        self.cameraVerticalLayout.setMaximumWidth(int(2 * parent.width() / 3))
+
+        self.centralwidget.addWidget(self.cameraVerticalLayout)
+        self.centralwidget.addWidget(self.scrollArea)
+        self.centralwidget.setSizes([parent.width() // 2, parent.width() // 2])
+
         parent.setCentralWidget(self.centralwidget)
 
         self.thread = VideoThread()
         self.thread.change_pixmap_signal.connect(self.update_image)
         self.thread.change_infobox_message_signal.connect(self.update_infobox)
         self.thread.start()
+
+    @staticmethod
+    def start_face_data_manager():
+        print(f"open file \"{setting['project_path'] + '/FaceDataManager.py'}\"")
+        Thread(target=system, args=(f"python {setting['project_path'] + '/FaceDataManager.py'}",)).start()
 
     def handle_dialog(self):
         dlg = ui_popup.Ui_Dialog(self, default_setting=setting, image=deepcopy(now_frame))
@@ -693,7 +705,12 @@ class App(QWidget):
         else:
             print("Cancel!")
 
-    def info_box_popup(self, ID: int, box: QLabel, cv_image: np.ndarray):
+    def register_new_identities(self):
+        if datetime.now().minute % 10 == 0 and (5 <= datetime.now().second <= 10):
+            pass
+        time.sleep(1)
+
+    def info_box_popup(self, index: int, box: QLabel, cv_image: np.ndarray):
         dlg = ui_popup2.Ui_Dialog(self)
 
         avg_color = list(map(int, np.average(np.average(cv_image, axis=0), axis=0)))
@@ -710,13 +727,15 @@ class App(QWidget):
         dlg.name = name
         date_: str = data[2]
         time_: str = data[3]
-        dlg.lineEdit.setText(name)
+
+        personal_data = Student().load_from_db(self.db, self.info_boxes_ID[index])
+        dlg.lineEdit.setText(personal_data.realname)
 
         if name.startswith("attacked:"):
             return
 
         try:
-            IDD: str = self.info_boxes_ID[ID]
+            IDD: str = personal_data.IDD
         except ValueError:
             IDD = name
             ct.recognizer.name_map[IDD] = name
@@ -741,33 +760,30 @@ class App(QWidget):
         if IDD in []:
             return
 
-        raw_info_data = self.db.get_data(IDD)
-        if raw_info_data is not None:
-            info_data_graph_info = raw_info_data.get("graph_info")
-            data_x, data_y = AttendantGraph(today=datetime.today()).load_floats(info_data_graph_info).data_in_week()
+        if personal_data is not None:
+            info_data_graph_info = personal_data.student_attendant_graph_data
+            data_x, data_y = AttendantGraph(today=datetime.today()).load_datetimes(info_data_graph_info).data_in_week()
             dlg.plot_graph(data_x, data_y)
             raw_info_data_except_graph_info = {}
             key_queue = [
-                "realname",
-                "surname",
-                "nickname",
-                "student_id",
-                "student_class",
-                "class_number",
-                "active_days",
-                "last_checked",
+                Student.FIRSTNAME,
+                Student.LASTNAME,
+                Student.NICKNAME,
+                Student.STUDENT_ID,
+                Student.STUDENT_CLASS,
+                Student.STUDENT_CLASS,
+                Student.LAST_CHECKED,
             ]
             for key in key_queue:
-                value = raw_info_data[key]
-                if key != "graph_info":
-                    if key == "last_checked":
+                value = personal_data.to_dict()[key]
+                if key != Student.STUDENT_ATTENDANT_GRAPH_DATA:
+                    if key == Student.LAST_CHECKED:
                         value = datetime.fromtimestamp(value).strftime("%d %b %Y %X")
-                    elif key == "active_days":
-                        value = len(
-                            Arrange(AttendantGraph().load_floats(info_data_graph_info).dates).arrange_in_all_as_day()
-                        )
                     raw_info_data_except_graph_info[key] = value
 
+            raw_info_data_except_graph_info["active_days"] = len(
+                Arrange(AttendantGraph().load_datetimes(info_data_graph_info).dates).arrange_in_all_as_day()
+            )
             print(raw_info_data_except_graph_info)
             dlg.add_data(raw_info_data_except_graph_info)
 
@@ -826,11 +842,11 @@ class App(QWidget):
                     file.write(dump_information)
                     ct.recognizer.name_map[IDD] = dlg.name
 
-            for i in range(ID + 1):
+            for i in range(index + 1):
                 if self.info_boxes_ID[i] == IDD or self.info_boxes_ID[i] == IDD_old:
                     textbox: QLabel = self.id_navigation[i]["message_box"]
                     textbox.setText(
-                        f"<font size=8><b>{dlg.name}: {ID}</b></font><br><font size=4>{date_} {time_}</font>"
+                        f"<font size=8><b>{dlg.name}: {index}</b></font><br><font size=4>{date_} {time_}</font>"
                     )
 
     def new_info_box(self, message, cv_image, ID) -> (QLabel, QLabel, QHBoxLayout):
@@ -912,10 +928,11 @@ class App(QWidget):
     def __load_image_passive(self, index: int = None, imageBox: QWidget = None, ID: str = None):
         if imageBox is None and index is not None:
             imageBox = self.id_navigation[index]["img_box"]
-            load_image = self.db.Storage().get_image(self.info_boxes_ID[index])
+            print(setting["cache_path"])
+            load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(self.info_boxes_ID[index])
 
         elif index is None:
-            load_image = self.db.Storage().get_image(ID)
+            load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(ID)
 
         else:
             load_image = unknown_image
@@ -990,7 +1007,7 @@ class App(QWidget):
                     data = name.lstrip("<font size=8><b>").rstrip("</font>").split("</b></font><br><font size=4>")
                     data = [*data[0].split(": "), *data[1].split(" ")]
                     real_name = data[0]
-
+                    print(real_name, ct.recognizer.name_map.get(self.info_boxes_ID[index]), "sdffdsfsdf")
                     print(real_name)
 
                     if real_name.startswith("attacked:"):
@@ -1112,4 +1129,6 @@ if __name__ == "__main__":
     MainWindow = QMainWindow()
     a = App(MainWindow)
     MainWindow.show()
+
+    RepeatedTimer(60*10, lambda: ct.recognizer.update(a.db))
     sys.exit(app.exec_())

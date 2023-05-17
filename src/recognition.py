@@ -2,7 +2,9 @@ import glob
 import logging
 import os.path as path
 import pickle
+from typing import *
 from tabulate import tabulate
+from src.DataBase import DataBase
 import cv2
 import face_recognition
 import imutils
@@ -14,6 +16,7 @@ from os.path import exists
 import mediapipe as mp
 from tabulate import tabulate
 from src.ShadowRemoval import remove_shadow_grey
+import google
 
 
 def get_all_filename(data_path) -> list:
@@ -37,6 +40,7 @@ class Recognition:
         self.num_jitters = 2
         self.remember: bool = remember
         self.unknown: str = "UNKNOWN??"
+        self.data_path = data_path
 
         if self.name_map_path is not None:
             if not exists(self.name_map_path):
@@ -49,8 +53,8 @@ class Recognition:
                 except decoder.JSONDecodeError:
                     print("json error decoding")
 
-        if path.isdir(data_path):
-            for filename in get_all_filename(data_path):
+        if path.isdir(self.data_path):
+            for filename in get_all_filename(self.data_path):
                 if path.splitext(filename)[1].lower() in [".pkl", ".pickle"]:
                     with open(filename, "rb") as file:
                         data = pickle.load(file)
@@ -77,10 +81,65 @@ class Recognition:
             color=Color.Cyan,
             )
 
+    def update(self, storage: DataBase.Storage):
+        encodings: List[google.cloud.storage.blob.Blob] = list(storage.bucket.list_blobs(prefix="encoded/"))
+        print(f"found new \"{len(encodings)}\" in firebase storage.")
+        print(tabulate([[j + 1, i.name, i.size] for j, i in enumerate(encodings)], headers=("index", "name", "size"),
+                       tablefmt="rounded_grid"))
+        for encoding in encodings:
+            if encoding.name.lstrip('encoded/'):
+                encoding.download_to_filename(
+                    path.join(self.data_path, "known", encoding.name.lstrip("encoded/")) + ".pkl"
+                )
+                print(f"downloaded encoding \"{encoding.name.lstrip('encoded/')}\" successful!")
+                print(f"trying to delete {encoding.name} from the storage")
+                storage.delete_encoding(encoding.name.lstrip('encoded/'))
+                print(f"delete encoding \"{encoding.name.lstrip('encoded/')}\" successful!")
+
+        if self.name_map_path is not None:
+            if not path.exists(self.name_map_path):
+                open(self.name_map_path, "w").close()
+            with open(self.name_map_path, "r") as file:
+                try:
+                    exists_name = file.read()
+                    if exists_name:
+                        self.name_map = loads(exists_name)
+                except decoder.JSONDecodeError:
+                    print("json error decoding")
+
+        if path.isdir(self.data_path):
+            for filename in general.scan_files(self.data_path):
+                if path.splitext(filename)[1].lower() in [".pkl", ".pickle"]:
+                    with open(filename, "rb") as file:
+                        data = pickle.load(file)
+                        if data.get("id") is not None and data.get("data") is not None:
+                            self.loaded_encodings.extend(data["data"])
+                            self.loaded_id.extend([data["id"] for _ in range(len(data["data"]))])
+                        else:
+                            print(f'cannot read file named "{path.basename(filename)}"')
+                            continue
+        else:
+            print("only accepts directory.")
+
+        log("\n" +
+            tabulate(
+                list(
+                    zip(
+                        sorted(list(set(self.loaded_id)), key=len),
+                        [self.loaded_id.count(i) for i in
+                         sorted(list(set(self.loaded_id)), key=len)],
+                    )
+                ),
+                headers=["ID", "amount"],
+                tablefmt="rounded_grid",
+            ),
+            color=Color.Green
+            )
+
     def recognition(self, img):
         # return face and confidence of the face
         if not self.loaded_encodings and not self.remember:
-            print("false becuase i dont know")
+            print("false because i dont know")
             return (False, 0), None
 
         # print(np.shape(self.loaded_encodings), self.loaded_id, len(self.loaded_id))
@@ -90,7 +149,7 @@ class Recognition:
         img = cv2.cvtColor(remove_shadow_grey(img), cv2.COLOR_GRAY2RGB)
 
         if not (W and H):
-            print("false becuase w or h is 0")
+            print("false because w or h is 0")
             return (False, 0), None
 
         img = imutils.resize(img, width=230)
@@ -128,7 +187,7 @@ class Recognition:
             # new_encoding = face_recognition.face_encodings(img, num_jitters=self.num_jitters)[0]
 
         except IndexError:
-            print("false becuase index error")
+            print("false because index error")
             return (False, 0), None
 
         if not self.loaded_encodings:
@@ -152,8 +211,6 @@ class Recognition:
                 match_names.add(self.loaded_id[j])
         match_names = list(match_names)
         match_names_value = [avg[i].get() for i in match_names]
-        # print(f"possible names: \n"
-        #       f"{tabulate([(match_names[i],match_names_value[i]) for i in range(len(match_names[:5]))],tablefmt='fancy_grid')}")
 
         name = self.unknown
         best_match_value = 0.7

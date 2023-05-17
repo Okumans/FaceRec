@@ -1,7 +1,7 @@
 from fpdf import FPDF
 from typing import Union
 import numpy as np
-from student_sorter import StudentSorter, Student
+from studentSorter import StudentSorter, Student
 from DataBase import DataBase
 
 
@@ -23,14 +23,16 @@ class PdfTable:
         self.header_color: tuple[int, int, int] = (191, 191, 191)
         self.paper_size: tuple[int, int] = self.pdf.epw, self.pdf.eph
         self.output_filename = "" if output_filename is None else output_filename
-        self.scius_image_path = "scius.png"
+        self.scius_image_path = r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\scius.png"
 
         self.__column_size = [((100 / (100 if column_ratio is None else sum(column_ratio)) * i) *
                                self.paper_size[0])/100 for i in column_ratio]
         self.__line_height = self.pdf.font_size * 2
 
-        self.pdf.add_font("THSarabunNew", fname="THSarabunNew.ttf")
-        self.pdf.add_font("THSarabunNew", style="B", fname="THSarabunNew Bold.ttf")
+        self.font_path = "THSarabunNew" if kwargs["font_path"] is None else kwargs["font_path"]
+        self.font_path_bold = "THSarabunNew" if kwargs["font_path_bold"] is None else kwargs["font_path_bold"]
+        self.pdf.add_font("THSarabunNew", fname=self.font_path)
+        self.pdf.add_font("THSarabunNew", style="B", fname=self.font_path_bold)
         self.pdf.set_font("THSarabunNew", size=16)
         self.student_program = kwargs.get("student_program", "")
         self.student_class = kwargs.get("student_class", "")
@@ -110,12 +112,12 @@ class PdfTable:
         self.pdf.output(self.output_filename)
 
 
-def get_data_by_class_from_db(db_name, output_path, data_path=None):
+def get_data_by_class_from_db(db_name, output_path, data_path=None, cred_path=None):
     if data_path is not None:
-        db = DataBase(db_name, sync_with_offline_db=True)
+        db = DataBase(db_name, sync_with_offline_db=True, certificate_path=cred_path)
         db.offline_db_folder_path = data_path
     else:
-        db = DataBase(db_name)
+        db = DataBase(db_name, certificate_path=cred_path)
 
     student_sorter = StudentSorter(data_path, db.get_database())
     student_classes = student_sorter.sort_as_classes().id_to_student()
@@ -127,20 +129,31 @@ def get_data_by_class_from_db(db_name, output_path, data_path=None):
                             student.student_id,
                             student.realname,
                             student.checked_state))
+        print(students)
 
         PdfTable(header=("เลขที่", "เลขประจำตัวนักเรียน", "ชื่อ - นามสกุล", "สถานะ"),
                  data=students,
                  column_ratio=(0.7, 2.7, 6, 2),
                  column_align=('C', 'C', 'L', 'C'),
-                 output_filename=output_path,
+                 output_filename=output_path+r"\result_"+make_safe_filename(student_class)+".pdf",
                  student_class=student_class,
-                 student_program="วิทย์-คณิต"
+                 student_program="วิทย์-คณิต",
+                 font_path=r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\THSarabunNew.ttf",
+                 font_path_bold=r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\THSarabunNew Bold.ttf"
                  ).get_pdf()
+
+
+def make_safe_filename(s):
+    def safe_char(c):
+        if c.isalnum():
+            return c
+        else:
+            return "_"
+    return "".join(safe_char(c) for c in s).rstrip("_")
 
 
 if __name__ == "__main__":
     get_data_by_class_from_db("Students",
-                              r"C:\general\Science_project\Science_project_cp39\result")
-    data_path = r"C:\general\Science_project\Science_project_cp39\resources_test_3"
+                              r"C:\general\Science_project\Science_project_cp39_refactor",
+                              cred_path=r"C:\general\Science_project\Science_project_cp39_refactor\src\resources\serviceAccountKey.json")
 
-    db.offline_db_folder_path = data_path

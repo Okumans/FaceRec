@@ -1,10 +1,14 @@
 import cv2
 import numpy as np
-from src.FaceAntiSpoofing.anti_spoof_predict import AntiSpoofPredict
 from os import listdir
-from src.FaceAntiSpoofing.utility import parse_model_name
 import os.path as path
 import warnings
+try:
+    from src.FaceAntiSpoofing.anti_spoof_predict import AntiSpoofPredict
+    from src.FaceAntiSpoofing.utility import parse_model_name
+except ModuleNotFoundError:
+    from FaceAntiSpoofing.anti_spoof_predict import AntiSpoofPredict
+    from FaceAntiSpoofing.utility import parse_model_name
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
