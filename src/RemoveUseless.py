@@ -3,71 +3,11 @@ from src import general
 from src.DataBase import DataBase
 from typing import *
 from src.recognition import Recognition
-import numpy as np
-import pickle
-from tabulate import tabulate
 from src.studentSorter import Student
 
 
 def add_str_nl(base, *args, sep=" ", end="\n"):
     return base + sep.join(args) + end
-
-
-class ProcessedFace:
-    def __init__(self, filename, auto_save=False):
-        self.filename = filename
-        self.IDD: str = ""
-        self.data: List[np.ndarray] = []
-        self.__auto_save = auto_save
-        self.open()
-
-    def open(self):
-        with open(self.filename, "rb") as file:
-            rawdata = pickle.load(file)
-            if rawdata.get("id") is not None and rawdata.get("data") is not None:
-                self.data = rawdata["data"]
-                self.IDD = rawdata["id"]
-            else:
-                raise KeyError(f'cannot read file "{self.filename}" because \"id\" or \"data\" is not found.')
-
-    def save(self):
-        with open(self.filename, "wb") as file:
-            pickle.dump(self.to_dict(), file)
-
-    def add(self, processed_face: ProcessedFace):
-        self.data.extend(processed_face.data)
-        if self.__auto_save: self.save()
-
-    def add_raw_encoding(self, raw_encoding: np.ndarray):
-        self.data.append(raw_encoding)
-        if self.__auto_save: self.save()
-
-    def add_raw_encodings(self, raw_encodings: Union[List[np.ndarray], Tuple[np.ndarray]]):
-        self.data.extend(raw_encodings)
-        if self.__auto_save: self.save()
-
-    @property
-    def amount(self) -> int:
-        return len(self.data)
-
-    def to_dict(self) -> Dict:
-        return {"id": self.IDD, "data": self.data}
-
-    def to_file(self, path):
-        with open(path, "wb") as file:
-            pickle.dump(self.to_dict(), file)
-
-
-class ProcessedFacePool:
-    @staticmethod
-    def from_filenames(filenames: List[str]) -> ProcessedFacePool:
-        return ProcessedFacePool([ProcessedFace(filename) for filename in filenames])
-
-    def __init__(self, processed_faces: Union[List[ProcessedFace], Tuple[ProcessedFace]]):
-        self.processed_faces: List[ProcessedFace] = processed_faces
-
-    def get_identities(self) -> List[str]:
-        return list(set(face.IDD for face in self.processed_faces))
 
 
 class RemoveUseless:
@@ -83,7 +23,7 @@ class RemoveUseless:
         self.recognizer.update(self.storage)
         self.files: List[str] = general.scan_files(self.target)
         self.all_identities: Set[str] = set(self.db.get_database().keys())
-        self.found_identities: Set[str] = set(ProcessedFacePool.from_filenames(self.files).get_identities())
+        self.found_identities: Set[str] = set(Recognition.ProcessedFacePool.from_filenames(self.files).get_identities())
         self.all_images: Set[str] = set(list(i.name for i in self.storage.bucket.list_blobs()))
 
     @property

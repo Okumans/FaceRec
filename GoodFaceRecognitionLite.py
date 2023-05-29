@@ -1,6 +1,6 @@
 import src.triple_gems
 import warnings
-from picamera2 import Picamera2
+# from picamera2 import Picamera2
 from PyQt5 import QtGui
 from PyQt5.QtWidgets import (
     QWidget,
@@ -544,7 +544,7 @@ class App(QWidget):
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = setting["db_path"]
         parent.setWindowTitle("Qt live label demo")
-        parent.resize(1336, 553)
+        parent.resize(672, 316)
         parent.setStyleSheet("background-color: #0b1615;")
 
         self.centralwidget = QSplitter(Qt.Horizontal)
@@ -554,7 +554,7 @@ class App(QWidget):
         sizePolicy.setHeightForWidth(self.image_label.sizePolicy().hasHeightForWidth())
         self.image_label.setSizePolicy(sizePolicy)
         self.image_label.setMaximumWidth(int(2 * parent.width() / 3))
-        self.image_label.setMinimumWidth(480 / 2)
+        self.image_label.setMinimumWidth(480 / 4)
 
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
@@ -567,15 +567,13 @@ class App(QWidget):
 
         self.setting_button = general.PushButton()
         self.setting_button.setIcon(QIcon(setting["project_path"] + "/src/resources/setting.png"))
-        self.setting_button.setIconSize(QSize(30, 30))
-        self.setting_button.setMaximumSize(QSize(60, 99999999))
+        self.setting_button.setIconSize(QSize(15, 15))
         self.setting_button.clicked.connect(self.handle_dialog)
         self.setting_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
 
         self.face_data_manager_button = general.PushButton()
         self.face_data_manager_button.setIcon(QIcon(setting["project_path"] + "/src/resources/manager.png"))
-        self.face_data_manager_button.setIconSize(QSize(30, 30))
-        self.face_data_manager_button.setMaximumSize(QSize(60, 99999999))
+        self.setting_button.setIconSize(QSize(15, 15))
         self.face_data_manager_button.clicked.connect(self.start_face_data_manager)
         self.face_data_manager_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
 
@@ -666,7 +664,7 @@ class App(QWidget):
             f"background-color: rgb({avg_color[2]}, {avg_color[1]}, {avg_color[0]});\n"
         )
 
-        data = box.text().lstrip("<font size=8><b>").rstrip("</font>").split("</b></font><br><font size=4>")
+        data = box.text().lstrip("<font size=5><b>").rstrip("</font>").split("</b></font><br><font size=3>")
         data = [*data[0].split(": "), *data[1].split(" ")]
         name = data[0]
         dlg.name = name
@@ -791,7 +789,7 @@ class App(QWidget):
                 if self.info_boxes_ID[i] == IDD or self.info_boxes_ID[i] == IDD_old:
                     textbox: QLabel = self.id_navigation[i]["message_box"]
                     textbox.setText(
-                        f"<font size=8><b>{dlg.name}: {index}</b></font><br><font size=4>{date_} {time_}</font>"
+                        f"<font size=5><b>{dlg.name}: {index}</b></font><br><font size=3>{date_} {time_}</font>"
                     )
 
     def new_info_box(self, message, cv_image, ID) -> (QLabel, QLabel, QHBoxLayout):
@@ -803,7 +801,7 @@ class App(QWidget):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(box.sizePolicy().hasHeightForWidth())
         box.setSizePolicy(sizePolicy)
-        box.setMinimumSize(QSize(0, 160))
+        box.setMinimumSize(QSize(0, 80))
         box.setMaximumSize(QSize(16777215, 160))
         box.setFont(QFont(setting["font"]))
         box.setStyleSheet(
@@ -821,8 +819,8 @@ class App(QWidget):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(img_box.sizePolicy().hasHeightForWidth())
         img_box.setSizePolicy(sizePolicy)
-        img_box.setMinimumSize(QSize(160, 160))
-        img_box.setMaximumSize(QSize(160, 160))
+        img_box.setMinimumSize(QSize(80, 80))
+        img_box.setMaximumSize(QSize(80, 80))
         img_box.setStyleSheet("background-color: #114f46;" "border-radius: 10px;" "border: 3px solid #0a402c;")
         if cv_image is None or not cv_image.any():
             cv_image = image_error
@@ -900,7 +898,7 @@ class App(QWidget):
         def _animate(value):
             grad = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop: 0 #1b8c7b, stop: {value} #1bb77b, " \
                    f"stop: {value + 0.001} rgb(62, 83, 87), stop: 1 rgb(32, 45, 47)); padding-left: 10px;"
-            textBox.setText(f"<font size=8><b>{round(value * 100)}</b></font>%")
+            textBox.setText(f"<font size=5><b>{round(value * 100)}</b></font>%")
             textBox.setStyleSheet(grad)
 
         def __animate(value):
@@ -949,7 +947,7 @@ class App(QWidget):
                     animation_imgbox.setEndValue(QtGui.QColor(34, 212, 146))
                     animation_imgbox.setDuration(500)
 
-                    data = name.lstrip("<font size=8><b>").rstrip("</font>").split("</b></font><br><font size=4>")
+                    data = name.lstrip("<font size=5><b>").rstrip("</font>").split("</b></font><br><font size=3>")
                     data = [*data[0].split(": "), *data[1].split(" ")]
                     real_name = data[0]
                     print(real_name, ct.recognizer.name_map.get(self.info_boxes_ID[index]), "sdffdsfsdf")
@@ -1005,7 +1003,7 @@ class App(QWidget):
         if self.info_boxes.get(ID) is None:
             self.info_boxes[ID] = True
             self.verticalLayout.removeItem(self.spacer)
-            img_box, message_box, layout = self.new_info_box(f"<font size=8><b>ค้นหาใบหน้า</b></font>", image, ID)
+            img_box, message_box, layout = self.new_info_box(f"<font size=5><b>ค้นหาใบหน้า</b></font>", image, ID)
             self.id_navigation[ID] = {"img_box": img_box, "message_box": message_box}
             self.verticalLayout.addLayout(layout)
 
@@ -1013,12 +1011,12 @@ class App(QWidget):
             if name == "IN_PROCESS" or name == "__UNKNOWN__":
                 message = None
             elif last is True and name is False:
-                message = f'<font size=8><b>FAILED: {ID}</b></font><br><font size=4>"' \
+                message = f'<font size=5><b>FAILED: {ID}</b></font><br><font size=3>"' \
                           f'{time.strftime("%D/%M %H:%M:%S", time.localtime())}</font>'
                 state = True
                 self.info_boxes_ID.append(False)
             elif name is None:
-                message = f"<font size=8>...</font>"
+                message = f"<font size=5>...</font>"
             else:
 
                 if name not in ["IN_PROCESS",
@@ -1041,7 +1039,7 @@ class App(QWidget):
                 if len(mapped_name) > 20:
                     mapped_name = mapped_name[:20] + "..."
 
-                message = f"<font size=8><b>{mapped_name}: {ID}</b></font><br><font size=4>" \
+                message = f"<font size=5><b>{mapped_name}: {ID}</b></font><br><font size=3>" \
                           f"{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>"
 
             if self.last_progress_.get(ID) is None:

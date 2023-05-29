@@ -1,6 +1,5 @@
 from src.RemoveUseless import RemoveUseless
 from typing import *
-from src.recognition import Recognition
 from src.DataBase import DataBase
 from src.general import print_msg_box, msg_box
 

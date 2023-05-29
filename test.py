@@ -1,4 +1,5 @@
 import google.cloud.storage.blob
+
 import src.triple_gems
 import warnings
 from PyQt5 import QtGui, QtMultimedia, QtMultimediaWidgets
@@ -28,14 +29,17 @@ from PyQt5.QtCore import (
     pyqtBoundSignal,
 )
 
+import pickle
 import sys
+from typing import NamedTuple
 import numpy as np
 import time
 from copy import deepcopy
+from shutil import move
 from datetime import datetime
 from pyautogui import size
 import os.path as path
-import os
+from os import mkdir, listdir, system
 import cv2
 import ray
 from ray.exceptions import GetTimeoutError
@@ -55,7 +59,6 @@ from src.general import Color, get_from_percent, RepeatedTimer
 from src.ShadowRemoval import remove_shadow_grey
 from src.FaceAlignment import face_alignment
 from src.DataBase import DataBase
-from src.recognition import Recognition
 from src.contamination_scanner import ContaminationScanner
 from src.attendant_graph import AttendantGraph, Arrange
 from src.studentSorter import Student
@@ -72,6 +75,7 @@ except FileNotFoundError:
     print("setting not found!, please run setup.py first.")
     quit()
 
+
 use_folder = [setting['project_path'], setting["face_reg_path"], setting["face_reg_path"] + r"/unknown",
               setting["face_reg_path"] + r"/known", setting['project_path'] + r"/cache"]
 
@@ -85,7 +89,7 @@ if __name__ == "__main__":
     # check if using folder is available
     for folder_path in use_folder:
         if not path.exists(folder_path):
-            os.mkdir(folder_path)
+            mkdir(folder_path)
 
     name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
     # remove_expire_unknown_faces(setting["face_reg_path"])
@@ -242,10 +246,10 @@ class VideoThread(QThread):
 
                         face_image = deepcopy(
                             image_use[
-                                int((int(box[1]) - get_from_percent(face_height, 20)) / setting["resolution"]):
-                                int((int(box[3]) + get_from_percent(face_height, 20)) / setting["resolution"]),
-                                int((int(box[0]) - get_from_percent(face_height, 20)) / setting["resolution"]):
-                                int((int(box[2]) + get_from_percent(face_height, 20)) / setting["resolution"]),
+                            int((int(box[1]) - get_from_percent(face_height, 20)) / setting["resolution"]):
+                            int((int(box[3]) + get_from_percent(face_height, 20)) / setting["resolution"]),
+                            int((int(box[0]) - get_from_percent(face_height, 20)) / setting["resolution"]):
+                            int((int(box[2]) + get_from_percent(face_height, 20)) / setting["resolution"]),
                             ]
                         )
                         (int(box[0] / setting["resolution"]), int(box[1] / setting["resolution"])),
@@ -503,7 +507,7 @@ class VideoThread(QThread):
                                     "UNKNOWN",
                                     "__UNKNOWN__",
                                     "CHECKED_UNKNOWN",
-                                    "UNKNOWN??", ""] and not name.startswith("attacked:") and update_current_identity:
+                                    "UNKNOWN??"] and not name.startswith("attacked:") and update_current_identity:
 
                         if self.db.quick_get_data(name).get("parent") is None:
                             self.db.update(name, parent=name)
@@ -587,12 +591,11 @@ class App(QWidget):
         self.last_progress_ = {}
         self.info_boxes = {}
         self.info_boxes_ID = []
-        self.info_boxes_attacked = []
         self.id_navigation = {}
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = setting["db_path"]
         parent.setWindowTitle("Qt live label demo")
-        parent.resize(1336, 553)
+        parent.resize(672, 316)
         parent.setStyleSheet("background-color: #0b1615;")
 
         self.centralwidget = QSplitter(Qt.Horizontal)
@@ -602,7 +605,7 @@ class App(QWidget):
         sizePolicy.setHeightForWidth(self.image_label.sizePolicy().hasHeightForWidth())
         self.image_label.setSizePolicy(sizePolicy)
         self.image_label.setMaximumWidth(int(2 * parent.width() / 3))
-        self.image_label.setMinimumWidth(480 / 2)
+        self.image_label.setMinimumWidth(480 / 4)
 
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
@@ -615,16 +618,14 @@ class App(QWidget):
 
         self.setting_button = general.PushButton()
         self.setting_button.setIcon(QIcon(setting["project_path"] + "/src/resources/setting.png"))
-        self.setting_button.setIconSize(QSize(30, 30))
-        self.setting_button.setMaximumSize(QSize(60, 99999999))
+        self.setting_button.setIconSize(QSize(15, 15))
         self.setting_button.clicked.connect(self.handle_dialog)
         self.setting_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
 
         self.face_data_manager_button = general.PushButton()
         self.face_data_manager_button.setIcon(QIcon(setting["project_path"] + "/src/resources/manager.png"))
-        self.face_data_manager_button.setIconSize(QSize(30, 30))
-        self.face_data_manager_button.setMaximumSize(QSize(60, 99999999))
-        self.face_data_manager_button.clicked.connect(self.start_face_data_manager)
+        self.face_data_manager_button.setIconSize(QSize(15, 15))
+        self.face_data_manager_button.clicked.connect(lambda: print(parent.width(), parent.height()))
         self.face_data_manager_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
 
         button_group_layout = QHBoxLayout()
@@ -686,7 +687,7 @@ class App(QWidget):
     @staticmethod
     def start_face_data_manager():
         print(f"open file \"{setting['project_path'] + '/FaceDataManager.py'}\"")
-        Thread(target=os.system, args=(f"python {setting['project_path'] + '/FaceDataManager.py'}",)).start()
+        Thread(target=system, args=(f"python {setting['project_path'] + '/FaceDataManager.py'}",)).start()
 
     def handle_dialog(self):
         dlg = ui_popup.Ui_Dialog(self, default_setting=setting, image=deepcopy(now_frame))
@@ -714,15 +715,12 @@ class App(QWidget):
             f"background-color: rgb({avg_color[2]}, {avg_color[1]}, {avg_color[0]});\n"
         )
 
-        data = box.text().lstrip("<font size=8><b>").rstrip("</font>").split("</b></font><br><font size=4>")
+        data = box.text().lstrip("<font size=5><b>").rstrip("</font>").split("</b></font><br><font size=3>")
         data = [*data[0].split(": "), *data[1].split(" ")]
         name = data[0]
         dlg.name = name
         date_: str = data[2]
         time_: str = data[3]
-
-        if self.info_boxes_ID[index] == ct.recognizer.unknown:
-            return
 
         personal_data = Student().load_from_db(self.db, self.info_boxes_ID[index])
         dlg.lineEdit.setText(personal_data.realname)
@@ -805,13 +803,14 @@ class App(QWidget):
                     if load_id_id == IDD_old:
                         ct.recognizer.loaded_id[index] = IDD
 
-                processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
-                    ct.faceRecPath + r"\unknown\{}.pkl".format(IDD))
+                with open(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), "rb") as file:
+                    face_data = pickle.loads(file.read())
+                    face_data["id"] = IDD
 
-                processed_face.IDD = IDD
-                processed_face.filename = ct.faceRecPath + r"\known\{}.pkl".format(IDD)
-                processed_face.save()
-                os.remove(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD))
+                with open(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), "wb") as file:
+                    file.write(pickle.dumps(face_data))
+
+                move(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), ct.faceRecPath + r"\known\{}.pkl".format(IDD))
 
                 if self.db.get_data(IDD_old) is not None:
                     db_data = self.db.get_data(IDD_old)
@@ -841,7 +840,7 @@ class App(QWidget):
                 if self.info_boxes_ID[i] == IDD or self.info_boxes_ID[i] == IDD_old:
                     textbox: QLabel = self.id_navigation[i]["message_box"]
                     textbox.setText(
-                        f"<font size=8><b>{dlg.name}: {index}</b></font><br><font size=4>{date_} {time_}</font>"
+                        f"<font size=5><b>{dlg.name}: {index}</b></font><br><font size=3>{date_} {time_}</font>"
                     )
 
     def new_info_box(self, message, cv_image, ID) -> (QLabel, QLabel, QHBoxLayout):
@@ -853,8 +852,8 @@ class App(QWidget):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(box.sizePolicy().hasHeightForWidth())
         box.setSizePolicy(sizePolicy)
-        box.setMinimumSize(QSize(0, 160))
-        box.setMaximumSize(QSize(16777215, 160))
+        box.setMinimumSize(QSize(0, 80))
+        box.setMaximumSize(QSize(16777215, 80))
         box.setFont(QFont(setting["font"]))
         box.setStyleSheet(
             "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop: 0 rgb(62, 83, 87), stop: 1 rgb(32, 45, 47));"
@@ -871,8 +870,8 @@ class App(QWidget):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(img_box.sizePolicy().hasHeightForWidth())
         img_box.setSizePolicy(sizePolicy)
-        img_box.setMinimumSize(QSize(160, 160))
-        img_box.setMaximumSize(QSize(160, 160))
+        img_box.setMinimumSize(QSize(80, 80))
+        img_box.setMaximumSize(QSize(80, 80))
         img_box.setStyleSheet("background-color: #114f46;" "border-radius: 10px;" "border: 3px solid #0a402c;")
         if cv_image is None or not cv_image.any():
             cv_image = image_error
@@ -923,6 +922,7 @@ class App(QWidget):
     def __load_image_passive(self, index: int = None, imageBox: QWidget = None, ID: str = None):
         if imageBox is None and index is not None:
             imageBox = self.id_navigation[index]["img_box"]
+            print(setting["cache_path"])
             load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(self.info_boxes_ID[index])
 
         elif index is None:
@@ -949,7 +949,7 @@ class App(QWidget):
         def _animate(value):
             grad = f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop: 0 #1b8c7b, stop: {value} #1bb77b, " \
                    f"stop: {value + 0.001} rgb(62, 83, 87), stop: 1 rgb(32, 45, 47)); padding-left: 10px;"
-            textBox.setText(f"<font size=8><b>{round(value * 100)}</b></font>%")
+            textBox.setText(f"<font size=5><b>{round(value * 100)}</b></font>%")
             textBox.setStyleSheet(grad)
 
         def __animate(value):
@@ -998,7 +998,13 @@ class App(QWidget):
                     animation_imgbox.setEndValue(QtGui.QColor(34, 212, 146))
                     animation_imgbox.setDuration(500)
 
-                    if self.info_boxes_attacked[index]:
+                    data = name.lstrip("<font size=5><b>").rstrip("</font>").split("</b></font><br><font size=3>")
+                    data = [*data[0].split(": "), *data[1].split(" ")]
+                    real_name = data[0]
+                    print(real_name, ct.recognizer.name_map.get(self.info_boxes_ID[index]), "sdffdsfsdf")
+                    print(real_name)
+
+                    if real_name.startswith("attacked:"):
                         animation1 = QVariantAnimation(self)
                         animation1.valueChanged.connect(__animate)
                         animation1.setStartValue(QtGui.QColor(27, 183, 123))
@@ -1048,32 +1054,22 @@ class App(QWidget):
         if self.info_boxes.get(ID) is None:
             self.info_boxes[ID] = True
             self.verticalLayout.removeItem(self.spacer)
-            img_box, message_box, layout = self.new_info_box(f"<font size=8><b>ค้นหาใบหน้า</b></font>", image, ID)
+            img_box, message_box, layout = self.new_info_box(f"<font size=5><b>ค้นหาใบหน้า</b></font>", image, ID)
             self.id_navigation[ID] = {"img_box": img_box, "message_box": message_box}
             self.verticalLayout.addLayout(layout)
 
         else:
-            if name is None:
-                self.info_boxes_attacked.append(False)
-            elif name is not False and name.startswith("attacked:"):
-                self.info_boxes_attacked.append(True)
-            else:
-                self.info_boxes_attacked.append(False)
-
             if name == "IN_PROCESS" or name == "__UNKNOWN__":
                 message = None
-            elif (last is True and name is False) or name == "":
-                message = f'<font size=8><b>FAILED: {ID}</b></font><br><font size=4>"' \
+            elif last is True and name is False:
+                message = f'<font size=5><b>FAILED: {ID}</b></font><br><font size=3>"' \
                           f'{time.strftime("%D/%M %H:%M:%S", time.localtime())}</font>'
                 state = True
                 self.info_boxes_ID.append(False)
             elif name is None:
-                message = f"<font size=8>...</font>"
-            elif name == ct.recognizer.unknown:
-                self.info_boxes_ID.append(ct.recognizer.unknown)
-                message = f'<font size=8><b>UNKNOWN: {ID}</b></font><br><font size=4>"' \
-                          f'{time.strftime("%D/%M %H:%M:%S", time.localtime())}</font>'
+                message = f"<font size=5>...</font>"
             else:
+
                 if name not in ["IN_PROCESS",
                                 "UNKNOWN",
                                 "__UNKNOWN__",
@@ -1094,7 +1090,7 @@ class App(QWidget):
                 if len(mapped_name) > 20:
                     mapped_name = mapped_name[:20] + "..."
 
-                message = f"<font size=8><b>{mapped_name}: {ID}</b></font><br><font size=4>" \
+                message = f"<font size=5><b>{mapped_name}: {ID}</b></font><br><font size=3>" \
                           f"{time.strftime('%D/%M %H:%M:%S', time.localtime())}</font>"
 
             if self.last_progress_.get(ID) is None:
@@ -1128,5 +1124,5 @@ if __name__ == "__main__":
     a = App(MainWindow)
     MainWindow.show()
 
-    RepeatedTimer(60 * 10, lambda: ct.recognizer.update(a.db))
+    RepeatedTimer(60*10, lambda: ct.recognizer.update(a.db))
     sys.exit(app.exec_())
