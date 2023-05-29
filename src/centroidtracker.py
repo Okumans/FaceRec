@@ -233,15 +233,10 @@ class CentroidTracker:
             usedCols = set()
 
             try:
-                # st = time.time()
                 object_names_preload = ray.get(self.objects_names.get_all.remote(), timeout=RAY_TIMEOUT)
-                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "objname..")
-                # st = time.time()
                 is_checked_preload = ray.get(self.is_checked.get_all.remote(), timeout=RAY_TIMEOUT)
-                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "ischeck..")
-                # st = time.time()
                 unknown_face_encodings = ray.get(self.pre_face_encodings.get_all.remote(), timeout=RAY_TIMEOUT)
-                # print(time.time() - st, 1 / ((time.time() - st) if time.time() - st != 0 else -1), "unkfaceen..\n")
+
             except GetTimeoutError:
                 return self.objects
 
@@ -275,30 +270,27 @@ class CentroidTracker:
                         if i.startswith("attacked:"):
                             continue
 
-                        if i in self.recognizer.loaded_id and not i.startswith("unknown:"):
-                            if exists(self.faceRecPath + r"/known/" + i + ".pkl"):
-                                with open(self.faceRecPath + r"/known/" + i + ".pkl", "rb") as file:
-                                    existed_data: dict = pkl_load(file)
-                                    existed_data["id"] = i
-                                    existed_data["data"].extend(unknown_face_encodings[i])
-                                    self.recognizer.loaded_encodings.extend(unknown_face_encodings[i])
-                                    self.recognizer.loaded_id.extend([i for _ in range(len(unknown_face_encodings[i]))])
-                                with open(self.faceRecPath + r"/known/" + i + ".pkl", "wb") as file:
-                                    pkl_dump(existed_data, file)
+                        if i in self.recognizer.processed_faces.get_identities() and not i.startswith("unknown:"):
+                            try:
+                                processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
+                                    self.faceRecPath + r"/known/" + i + ".pkl")
+                                processed_face.add_raw_encodings(unknown_face_encodings[i])
+                                processed_face.save()
+                                self.recognizer.processed_faces.add_processed_face(processed_face)
                                 self.pre_face_encodings.delete.remote(i)
+                            except (FileNotFoundError, KeyError):
+                                pass
                         else:
                             # i is "unknown:[<ID>]" but : cannot be in filename
-                            if i not in self.recognizer.loaded_id:
+                            if i not in self.recognizer.processed_faces.get_identities():
                                 information[i] = f"บุคคลปริศนา [{i.split(':')[1]}]"
-                            with open(
-                                self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl",
-                                "wb",
-                            ) as file:
-                                pkl_dump({"id": i, "data": unknown_face_encodings[i]}, file)
-                                self.recognizer.loaded_encodings.extend(unknown_face_encodings[i])
-                                self.recognizer.loaded_id.extend([i for _ in range(len(unknown_face_encodings[i]))])
-                                self.recognizer.name_map[i] = information[i]
-                                self.pre_face_encodings.delete.remote(i)
+
+                            processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
+                                self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl")
+                            processed_face.add_raw_encodings(unknown_face_encodings[i])
+                            processed_face.save()
+                            self.recognizer.name_map[i] = information[i]
+                            self.pre_face_encodings.delete.remote(i)
 
                     dump_information = dumps(information)
                     if dump_information:

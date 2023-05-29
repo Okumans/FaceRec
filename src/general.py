@@ -215,7 +215,7 @@ def putBorderText(
     cv2.putText(
         img=img,
         text=str(text),
-        org=list(map(int, org)),
+        org=tuple(map(int, org)),
         fontFace=fontFace,
         fontScale=fontScale,
         color=bg_color,
@@ -226,7 +226,7 @@ def putBorderText(
     cv2.putText(
         img=img,
         text=str(text),
-        org=list(map(int, org)),
+        org=tuple(map(int, org)),
         fontFace=fontFace,
         fontScale=fontScale,
         color=fg_color,

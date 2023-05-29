@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import collections
 import glob
 import logging
 import os.path as path
@@ -30,12 +33,108 @@ def get_all_filename(data_path) -> list:
 
 
 class Recognition:
+    class ProcessedFace:
+        def __init__(self, filename, auto_save=False):
+            self.filename = filename
+            self.IDD: str = ""
+            self.data: List[np.ndarray] = []
+            self.VER = 1
+            self.__auto_save = auto_save
+            self.open()
+
+        def open(self):
+            try:
+                with open(self.filename, "rb") as file:
+                    rawdata = pickle.load(file)
+                    if rawdata.get("id") is not None and rawdata.get("data") is not None:
+                        self.data = rawdata.get("data")
+                        self.IDD = rawdata.get("id")
+                        self.VER = rawdata.get("version")
+                    else:
+                        raise KeyError(f'cannot read file "{self.filename}" because \"id\" or \"data\" is not found.')
+            except FileNotFoundError:
+                raise FileNotFoundError(f'file named "{self.filename}" not found!')
+
+        def save(self):
+            with open(self.filename, "wb") as file:
+                pickle.dump(self.to_dict(), file)
+
+        def add(self, processed_face: Recognition.ProcessedFace):
+            self.data.extend(processed_face.data)
+            if self.__auto_save:
+                self.save()
+
+        def add_raw_encoding(self, raw_encoding: np.ndarray):
+            self.data.append(raw_encoding)
+            if self.__auto_save:
+                self.save()
+
+        def add_raw_encodings(self, raw_encodings: Union[List[np.ndarray], Tuple[np.ndarray]]):
+            self.data.extend(raw_encodings)
+            if self.__auto_save:
+                self.save()
+
+        @property
+        def amount(self) -> int:
+            return len(self.data)
+
+        def to_dict(self) -> Dict:
+            return {"id": self.IDD, "data": self.data}
+
+        def to_file(self, file_path):
+            with open(file_path, "wb") as file:
+                pickle.dump(self.to_dict(), file)
+
+    class ProcessedFacePool:
+        @staticmethod
+        def from_filenames(filenames: List[str]) -> Recognition.ProcessedFacePool:
+            return Recognition.ProcessedFacePool([Recognition.ProcessedFace(filename) for filename in filenames])
+
+        def __init__(self, processed_faces: Union[List[Recognition.ProcessedFace], Tuple[Recognition.ProcessedFace]]):
+            self.processed_faces: List[Recognition.ProcessedFace] = processed_faces
+
+        def get_identities(self) -> List[str]:
+            return list(set(face.IDD for face in self.processed_faces))
+
+        def get_encodings(self) -> List[List[np.ndarray]]:
+            return [i.data for i in self.processed_faces]
+
+        def add(self, process_pool: Recognition.ProcessedFacePool):
+            self.processed_faces.extend(process_pool.processed_faces)
+
+        def add_processed_face(self, process_face: Recognition.ProcessedFace):
+            self.processed_faces.append(process_face)
+
+        def face_recognition(self, ref: List[np.ndarray], tolerance=0.4) -> Tuple[str, float]:
+            avg: Dict[str, general.Average] = {}
+            for identity in self.processed_faces:
+                for new_encoding in ref:
+                    matches = face_recognition.compare_faces(identity.data, new_encoding, tolerance=tolerance)
+
+                    for idx, match in enumerate(matches):
+                        if match:
+                            face_distance = face_recognition.face_distance([identity.data[idx]], new_encoding)
+                            if avg.get(identity.IDD) is None:
+                                avg[identity.IDD] = general.Average()
+                            avg[identity.IDD].add(face_distance)
+            sorted_identities = sorted(avg.items(), key=lambda x: x[1].get())
+
+            for i in sorted_identities:
+                print(i[0], ": ", i[1].get())
+
+            return sorted_identities[0][0], sorted_identities[0][1].get()
+
+        def generator(self) -> collections.Iterable[Recognition.ProcessedFace]:
+            for i in self.processed_faces:
+                yield i
+
     def __init__(self, data_path, remember=False, name_map_path=None):
-        self.loaded_encodings: list[np.ndarray] = []
+        self.processed_faces: Recognition.ProcessedFacePool
+
         self.name_map: dict[str, str] = {}
         self.name_map_path: str = name_map_path
+
         self.face_detection_method: str = "hog"
-        self.loaded_id: list[str] = []
         self.min_confidence: float = 0.5
         self.num_jitters = 2
         self.remember: bool = remember
@@ -54,25 +153,18 @@ class Recognition:
                     print("json error decoding")
 
         if path.isdir(self.data_path):
-            for filename in get_all_filename(self.data_path):
-                if path.splitext(filename)[1].lower() in [".pkl", ".pickle"]:
-                    with open(filename, "rb") as file:
-                        data = pickle.load(file)
-                        if data.get("id") is not None and data.get("data") is not None:
-                            self.loaded_encodings.extend(data["data"])
-                            self.loaded_id.extend([data["id"] for _ in range(len(data["data"]))])
-                        else:
-                            print(f'cannot read file named "{path.basename(filename)}"')
-                            continue
+            self.processed_faces: Recognition.ProcessedFacePool = Recognition.ProcessedFacePool.from_filenames(
+                general.scan_files(self.data_path, ".pkl"))
         else:
-            print("only accepts directory.")
+            raise TypeError("only accepts directory.")
 
         log("\n" +
             tabulate(
                 list(
                     zip(
-                        sorted(list(set(self.loaded_id)), key=len),
-                        [self.loaded_id.count(i) for i in sorted(list(set(self.loaded_id)), key=len)],
+                        sorted(self.processed_faces.get_identities(), key=len),
+                        [self.processed_faces.get_identities().count(i) for i in
+                         sorted(list(set(self.processed_faces.get_identities())), key=len)],
                     )
                 ),
                 headers=["ID", "amount"],
@@ -107,27 +199,17 @@ class Recognition:
                 except decoder.JSONDecodeError:
                     print("json error decoding")
 
-        if path.isdir(self.data_path):
-            for filename in general.scan_files(self.data_path):
-                if path.splitext(filename)[1].lower() in [".pkl", ".pickle"]:
-                    with open(filename, "rb") as file:
-                        data = pickle.load(file)
-                        if data.get("id") is not None and data.get("data") is not None:
-                            self.loaded_encodings.extend(data["data"])
-                            self.loaded_id.extend([data["id"] for _ in range(len(data["data"]))])
-                        else:
-                            print(f'cannot read file named "{path.basename(filename)}"')
-                            continue
-        else:
-            print("only accepts directory.")
+        process_faces: Recognition.ProcessedFacePool = Recognition.ProcessedFacePool.from_filenames(
+            general.scan_files(self.data_path, ".pkl"))
+        self.processed_faces.add(process_faces)
 
         log("\n" +
             tabulate(
                 list(
                     zip(
-                        sorted(list(set(self.loaded_id)), key=len),
-                        [self.loaded_id.count(i) for i in
-                         sorted(list(set(self.loaded_id)), key=len)],
+                        sorted(list(set(self.processed_faces.get_identities())), key=len),
+                        [self.processed_faces.get_identities().count(i) for i in
+                         sorted(list(set(self.processed_faces.get_identities())), key=len)],
                     )
                 ),
                 headers=["ID", "amount"],
@@ -138,11 +220,9 @@ class Recognition:
 
     def recognition(self, img):
         # return face and confidence of the face
-        if not self.loaded_encodings and not self.remember:
+        if not self.processed_faces.get_encodings() and not self.remember:
             print("false because i dont know")
             return (False, 0), None
-
-        # print(np.shape(self.loaded_encodings), self.loaded_id, len(self.loaded_id))
 
         mp_face_detection = mp.solutions.face_detection
         W, H, _ = img.shape
@@ -156,7 +236,7 @@ class Recognition:
         W, H, _ = img.shape
 
         if self.face_detection_method == "mp":
-            face_location = []  # noting
+            face_location = []
             with mp_face_detection.FaceDetection(model_selection=0) as detection:
                 results = detection.process(img)
                 if results.detections:
@@ -185,46 +265,20 @@ class Recognition:
             new_encoding = face_recognition.face_encodings(img, face_location, num_jitters=self.num_jitters,
                                                            model="large")[0]
             # new_encoding = face_recognition.face_encodings(img, num_jitters=self.num_jitters)[0]
-
         except IndexError:
             print("false because index error")
             return (False, 0), None
 
-        if not self.loaded_encodings:
+        if not self.processed_faces.get_encodings():
             return (self.unknown, 0.3), new_encoding
-        matches = face_recognition.compare_faces(self.loaded_encodings, new_encoding, tolerance=0.6)
-        face_distances = face_recognition.face_distance(self.loaded_encodings, new_encoding)
-
-        avg: dict[str, general.Average] = {}
-        for idx, face in enumerate(self.loaded_id):
-            if avg.get(face) is None:
-                avg[face] = general.Average()
-            try:
-                avg[face].add(face_distances[idx])
-            except IndexError:
-                pass
-                # print(len(self.loaded_id), len(self.loaded_encodings))
-
-        match_names = set()
-        for j, i in enumerate(matches):
-            if i:
-                match_names.add(self.loaded_id[j])
-        match_names = list(match_names)
-        match_names_value = [avg[i].get() for i in match_names]
 
         name = self.unknown
         best_match_value = 0.7
 
-        if match_names_value:
-            best_match_index = np.argmin(match_names_value)
-            best_match_value = match_names_value[best_match_index]
-            if 1 - best_match_value > self.min_confidence:
-                # name = f"{self.loaded_id[best_match_index]} [{round(1-face_distances[best_match_index],2)}]"
-                name = f"{match_names[best_match_index]}"
+        name, best_match_value = self.processed_faces.face_recognition([new_encoding], tolerance=1-self.min_confidence)
 
-            print(f"recognized: {name}")
-
-            if name == self.unknown and self.remember:
-                return (name, 1 - best_match_value), new_encoding
+        print(f"recognized: {name}")
+        if name == self.unknown and self.remember:
+            return (name, 1 - best_match_value), new_encoding
 
         return (name, 1 - best_match_value), new_encoding
