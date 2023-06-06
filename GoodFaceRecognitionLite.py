@@ -1,7 +1,7 @@
+import google.cloud.storage.blob
 import src.triple_gems
 import warnings
-# from picamera2 import Picamera2
-from PyQt5 import QtGui
+from PyQt5 import QtGui, QtMultimedia, QtMultimediaWidgets
 from PyQt5.QtWidgets import (
     QWidget,
     QApplication,
@@ -27,37 +27,41 @@ from PyQt5.QtCore import (
     QVariantAnimation,
     pyqtBoundSignal,
 )
-import pickle
+
 import sys
+import numpy as np
 import time
 from copy import deepcopy
-from shutil import move
 from datetime import datetime
 from pyautogui import size
+import os.path as path
 import os
 import cv2
 import ray
 from ray.exceptions import GetTimeoutError
-import os.path as path
-import numpy as np
 import mediapipe as mp
 from mss import mss
 from threading import Thread
-from json import dumps, loads
+from json import dumps, loads, decoder
 import json
 from typing import *
 import logging
-from src import ui_popup
-from src import ui_popup2
+from src import ui_popup  # for setting popup
+from src import ui_popup2  # for infobox popup
 from src import general
 from src.scrollbar_style import scrollbar_style
-from src.init_name import name_information_init
+from src.init_name import name_information_init, remove_expire_unknown_faces
 from src.general import Color, get_from_percent, RepeatedTimer
 from src.ShadowRemoval import remove_shadow_grey
 from src.FaceAlignment import face_alignment
 from src.DataBase import DataBase
+from src.recognition import Recognition
+from src.contamination_scanner import ContaminationScanner
 from src.attendant_graph import AttendantGraph, Arrange
 from src.studentSorter import Student
+from tabulate import tabulate
+
+warnings.filterwarnings("ignore")
 from src.centroidtracker import CentroidTracker
 
 # -----------------setting-----------------
@@ -82,7 +86,13 @@ if __name__ == "__main__":
             os.mkdir(folder_path)
 
     name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
+    # remove_expire_unknown_faces(setting["face_reg_path"])
+    # ContaminationScanner(setting["face_reg_path"], .65).scan()
+    # ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
 
+    mp_face_detection = mp.solutions.face_detection
+    mp_face_mesh = mp.solutions.face_mesh
+    # emotion_recognizer = FER()
     ct = CentroidTracker(
         faceRecPath=setting["face_reg_path"],
         maxDisappeared=setting["face_max_disappeared"],
@@ -93,13 +103,7 @@ if __name__ == "__main__":
         remember_unknown_face=setting["remember_unknown_face"],
         otherSetting=setting,
     )
-
-    mp_face_detection = mp.solutions.face_detection
-    mp_face_mesh = mp.solutions.face_mesh
     ct.recognizer.face_detection_method = "hog"
-    image_error = cv2.imread(setting["project_path"] + "/src/resources/image_error.png")
-    unknown_image = cv2.imread(setting["project_path"] + "/src/resources/unknown_people.png")
-    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
     (H, W) = (None, None)
     text_color = (31, 222, 187)
     prev_frame_time = 0  # fps counter
@@ -107,6 +111,9 @@ if __name__ == "__main__":
     last_id = -1
     now_frame = 0  # cv2 mat
     already_check = {}
+    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    image_error = cv2.imread(setting["project_path"] + "/src/resources/image_error.png")
+    unknown_image = cv2.imread(setting["project_path"] + "/src/resources/unknown_people.png")
 
 
 class VideoThread(QThread):
@@ -127,16 +134,17 @@ class VideoThread(QThread):
         self.objname_map: Dict[int, any] = {}
         self.avg_fps: general.Average = general.Average([0], calculate_amount=100)
 
-        if self.video_type == "screen":
-            self.sct = mss()
-            self.screen_size = size()
-        else:
-            self.cap = Picamera2()
+        # for windows
+        if setting.get("platform", "win") == "win":
+            self.cap = cv2.VideoCapture(0)
+        elif setting.get("platform", "win") == "rpi":
             self.cap.create_video_configuration({"size": (640, 480)})
             self.cap.start()
 
     def release_cam(self):
-        if self.video_type != "screen":
+        if setting.get("platform", "win") == "win":
+            self.cap.release()
+        elif setting.get("platform", "win") == "rpi":
             self.cap.close()
         self.run = False
 
@@ -145,18 +153,8 @@ class VideoThread(QThread):
         with mp_face_detection.FaceDetection(min_detection_confidence=setting["min_detection_confidence"],
                                              model_selection=1) as face_detection:
             while self.run or self.cap.isOpened():
-                if self.video_type == "screen":
-                    monitor = {
-                        "top": 40,
-                        "left": 0,
-                        "width": self.screen_size[0],
-                        "height": self.screen_size[1],
-                    }
-                    image = np.array(self.sct.grab(monitor))
-                    success = True
-                else:
-                    success, image = True, self.cap.capture_array()
-
+                # success, image = True, self.cap.capture_array()
+                success, image = self.cap.read()
                 new_frame_time = time.time()
 
                 if not success or image is None:
@@ -179,8 +177,9 @@ class VideoThread(QThread):
 
                 now_frame = image
                 image.flags.writeable = False
-                image = cv2.flip(cv2.cvtColor(image, cv2.COLOR_BGRA2RGB), 1)
+                image = cv2.flip(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), 1)
 
+                # change the brightness, contrast, sharpness, gray_mode as it assign to the settings
                 if setting["autoBrightnessContrast"]:
                     image = general.change_brightness_to(image, setting["autoBrightnessValue"])
                     image = general.change_contrast_to(image, setting["autoContrastValue"])
@@ -188,6 +187,7 @@ class VideoThread(QThread):
                 if setting["sharpness_filter"]:
                     image = cv2.filter2D(src=image, ddepth=-1, kernel=kernel)
 
+                # for night vision or bad lighting condition
                 if setting["gray_mode"]:
                     image = cv2.cvtColor(remove_shadow_grey(image), cv2.COLOR_GRAY2RGB)
                     general.putBorderText(
@@ -202,7 +202,9 @@ class VideoThread(QThread):
                         3
                     )
 
+                # st = time.time()
                 results: NamedTuple = face_detection.process(image)
+                # print(time.time()-st, 1/((time.time()-st) if time.time()-st != 0 else -1), "process..")
 
                 image.flags.writeable = True
                 image_use = deepcopy(image)
@@ -307,7 +309,7 @@ class VideoThread(QThread):
                             image,
                             (int(box[0] / setting["resolution"]), int(box[1] / setting["resolution"])),
                             (int(box[2] / setting["resolution"]), int(box[3] / setting["resolution"])),
-                            text_color,
+                            text_color,  # if 0.3 <= distance <= 3.5 and face_height >= 60 else (255, 0, 0),
                             3,
                         )
 
@@ -459,7 +461,7 @@ class VideoThread(QThread):
                                     "UNKNOWN",
                                     "__UNKNOWN__",
                                     "CHECKED_UNKNOWN",
-                                    "UNKNOWN??"] and not name.startswith("attacked:") and update_current_identity:
+                                    "UNKNOWN??", ""] and not name.startswith("attacked:") and update_current_identity:
 
                         if self.db.quick_get_data(name).get("parent") is None:
                             self.db.update(name, parent=name)
@@ -526,11 +528,10 @@ class VideoThread(QThread):
 
                 self.change_pixmap_signal.emit(image)
 
-                if setting["save_as_video"]:
-                    self.out.write(image)
-
-        if self.video_type != "screen":
+        if setting.get("platform", "win") == "win":
             self.cap.release()
+        elif setting.get("platform", "win") == "rpi":
+            self.cap.close()
 
 
 class App(QWidget):
@@ -540,10 +541,11 @@ class App(QWidget):
         self.last_progress_ = {}
         self.info_boxes = {}
         self.info_boxes_ID = []
+        self.info_boxes_attacked = []
         self.id_navigation = {}
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = setting["db_path"]
-        parent.setWindowTitle("Qt live label demo")
+        parent.setWindowTitle("GoodFaceRecognition")
         parent.resize(672, 316)
         parent.setStyleSheet("background-color: #0b1615;")
 
@@ -671,6 +673,9 @@ class App(QWidget):
         date_: str = data[2]
         time_: str = data[3]
 
+        if self.info_boxes_ID[index] == ct.recognizer.unknown:
+            return
+
         personal_data = Student().load_from_db(self.db, self.info_boxes_ID[index])
         dlg.lineEdit.setText(personal_data.realname)
 
@@ -752,14 +757,13 @@ class App(QWidget):
                     if load_id_id == IDD_old:
                         ct.recognizer.loaded_id[index] = IDD
 
-                with open(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), "rb") as file:
-                    face_data = pickle.loads(file.read())
-                    face_data["id"] = IDD
+                processed_face = Recognition.ProcessedFace(
+                    ct.faceRecPath + r"\unknown\{}.pkl".format(IDD))
 
-                with open(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), "wb") as file:
-                    file.write(pickle.dumps(face_data))
-
-                move(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD), ct.faceRecPath + r"\known\{}.pkl".format(IDD))
+                processed_face.IDD = IDD
+                processed_face.filename = ct.faceRecPath + r"\known\{}.pkl".format(IDD)
+                processed_face.save()
+                os.remove(ct.faceRecPath + r"\unknown\{}.pkl".format(IDD))
 
                 if self.db.get_data(IDD_old) is not None:
                     db_data = self.db.get_data(IDD_old)
@@ -871,7 +875,6 @@ class App(QWidget):
     def __load_image_passive(self, index: int = None, imageBox: QWidget = None, ID: str = None):
         if imageBox is None and index is not None:
             imageBox = self.id_navigation[index]["img_box"]
-            print(setting["cache_path"])
             load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(self.info_boxes_ID[index])
 
         elif index is None:
@@ -947,13 +950,7 @@ class App(QWidget):
                     animation_imgbox.setEndValue(QtGui.QColor(34, 212, 146))
                     animation_imgbox.setDuration(500)
 
-                    data = name.lstrip("<font size=5><b>").rstrip("</font>").split("</b></font><br><font size=3>")
-                    data = [*data[0].split(": "), *data[1].split(" ")]
-                    real_name = data[0]
-                    print(real_name, ct.recognizer.name_map.get(self.info_boxes_ID[index]), "sdffdsfsdf")
-                    print(real_name)
-
-                    if real_name.startswith("attacked:"):
+                    if self.info_boxes_attacked[index]:
                         animation1 = QVariantAnimation(self)
                         animation1.valueChanged.connect(__animate)
                         animation1.setStartValue(QtGui.QColor(27, 183, 123))
@@ -1003,22 +1000,32 @@ class App(QWidget):
         if self.info_boxes.get(ID) is None:
             self.info_boxes[ID] = True
             self.verticalLayout.removeItem(self.spacer)
-            img_box, message_box, layout = self.new_info_box(f"<font size=5><b>ค้นหาใบหน้า</b></font>", image, ID)
+            img_box, message_box, layout = self.new_info_box(f"<font size=5><b>Finding face..</b></font>", image, ID)
             self.id_navigation[ID] = {"img_box": img_box, "message_box": message_box}
             self.verticalLayout.addLayout(layout)
 
         else:
+            if name is None:
+                self.info_boxes_attacked.append(False)
+            elif name is not False and name.startswith("attacked:"):
+                self.info_boxes_attacked.append(True)
+            else:
+                self.info_boxes_attacked.append(False)
+
             if name == "IN_PROCESS" or name == "__UNKNOWN__":
                 message = None
-            elif last is True and name is False:
+            elif (last is True and name is False) or name == "":
                 message = f'<font size=5><b>FAILED: {ID}</b></font><br><font size=3>"' \
                           f'{time.strftime("%D/%M %H:%M:%S", time.localtime())}</font>'
                 state = True
                 self.info_boxes_ID.append(False)
             elif name is None:
                 message = f"<font size=5>...</font>"
+            elif name == ct.recognizer.unknown:
+                self.info_boxes_ID.append(ct.recognizer.unknown)
+                message = f'<font size=5><b>UNKNOWN: {ID}</b></font><br><font size=3>"' \
+                          f'{time.strftime("%D/%M %H:%M:%S", time.localtime())}</font>'
             else:
-
                 if name not in ["IN_PROCESS",
                                 "UNKNOWN",
                                 "__UNKNOWN__",
