@@ -36,6 +36,7 @@ default_setting = {
     "cpu_amount": multiprocessing.cpu_count(),
     "resolution": 1,
     "rotate_frame": 0,
+    "platform": "win"
 }
 
 try:
