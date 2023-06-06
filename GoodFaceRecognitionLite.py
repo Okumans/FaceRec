@@ -138,6 +138,7 @@ class VideoThread(QThread):
         if setting.get("platform", "win") == "win":
             self.cap = cv2.VideoCapture(0)
         elif setting.get("platform", "win") == "rpi":
+            self.cap = Picamera2()
             self.cap.create_video_configuration({"size": (640, 480)})
             self.cap.start()
 
