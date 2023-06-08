@@ -6,7 +6,11 @@ import os
 from datetime import datetime, timedelta
 import pickle
 import shelve
-
+from src import general
+from src.recognition import Recognition
+from typing import *
+import google.cloud.storage.blob
+import google.api_core.exceptions
 
 def scan_files(directory: str) -> list[str]:
     def dfs(_directory: str, _file_type: str) -> list:
@@ -110,8 +114,39 @@ def name_information_init(data_path: str, name_information: str, certificate_pat
             file.write(json.dumps(name_information_data))
 
 
+def init_shared(data_path: str, cache_path: str,  certificate_path: str = "src/serviceAccountKey.json"):
+    db: DataBase = DataBase("Students", sync_with_offline_db=True, certificate_path=certificate_path)
+    db.offline_db_folder_path = data_path
+    storage: DataBase.Storage = db.Storage(cache=cache_path)
+
+    files = general.scan_files(data_path, ".pkl")
+    print(files)
+    pfp: Recognition.ProcessedFacePool = Recognition.ProcessedFacePool.from_filenames(files)
+    share_filenames = [i.name.lstrip("shared/") for i in list(storage.bucket.list_blobs(prefix="shared/"))][1:]
+    share_files: List[google.cloud.storage.blob.Blob] = [i for i in list(storage.bucket.list_blobs(prefix="shared/"))][1:]
+
+    print(share_filenames)
+
+    for identity in pfp.get_identities():
+        if identity not in share_filenames:
+            if not pfp.get_encoding(identity).is_unknown:
+                print("Upload", f"{identity}.pkl")
+                pfp.get_encoding(identity).to_file(os.path.join(cache_path, f"{identity}_temp.pkl"))
+                storage.add_encoding_file(identity, os.path.join(cache_path, f"{identity}_temp.pkl"), prefix_path="shared/")
+                os.remove(os.path.join(cache_path, f"{identity}_temp.pkl"))
+
+    identity_blob: google.cloud.storage.blob.Blob
+    identity: str
+    for identity,  identity_blob in zip(share_filenames, share_files):
+        if identity not in pfp.get_identities():
+            print("Download", os.path.basename(os.path.join(data_path, "known", f"{identity}.pkl")))
+            try:
+                identity_blob.download_to_filename(os.path.join(data_path, "known", f"{identity}.pkl"))
+            except google.api_core.exceptions.NotFound:
+                print(f"{identity}.pkl not found!")
+                if os.path.exists(os.path.join(data_path, "known", f"{identity}.pkl")):
+                    os.remove(os.path.join(data_path, "known", f"{identity}.pkl"))
+
+
 if __name__ == "__main__":
-    name_information_init(
-        r"C:\general\Science_project\Science_project_cp39\resources",
-        r"C:\general\Science_project\Science_project_cp39\resources\name_information.json",
-    )
+    init_shared("../recognition_resources_temp", "../cache", "../src/resources/serviceAccountKey.json")

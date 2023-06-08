@@ -1,7 +1,32 @@
-import google.cloud.storage.blob
-import src.triple_gems
-import warnings
-from PyQt5 import QtGui, QtMultimedia, QtMultimediaWidgets
+import json
+import logging
+import os
+import os.path as path
+import sys
+import time
+from copy import deepcopy
+from datetime import datetime
+from json import dumps, loads
+from threading import Thread
+from typing import *
+
+import cv2
+import mediapipe as mp
+import numpy as np
+import ray
+from PyQt5 import QtGui
+from PyQt5.QtCore import (
+    pyqtSignal,
+    pyqtSlot,
+    Qt,
+    QThread,
+    QSize,
+    QRect,
+    QCoreApplication,
+    QVariantAnimation,
+    pyqtBoundSignal,
+)
+from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QWidget,
     QApplication,
@@ -15,54 +40,27 @@ from PyQt5.QtWidgets import (
     QBoxLayout,
     QSplitter
 )
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtCore import (
-    pyqtSignal,
-    pyqtSlot,
-    Qt,
-    QThread,
-    QSize,
-    QRect,
-    QCoreApplication,
-    QVariantAnimation,
-    pyqtBoundSignal,
-)
-
-import sys
-import numpy as np
-import time
-from copy import deepcopy
-from datetime import datetime
-from pyautogui import size
-import os.path as path
-import os
-import cv2
-import ray
 from ray.exceptions import GetTimeoutError
-import mediapipe as mp
-from mss import mss
-from threading import Thread
-from json import dumps, loads, decoder
-import json
-from typing import *
-import logging
-from src import ui_popup  # for setting popup
-from src import ui_popup2  # for infobox popup
-from src import general
-from src.scrollbar_style import scrollbar_style
-from src.init_name import name_information_init, remove_expire_unknown_faces
-from src.general import Color, get_from_percent, RepeatedTimer
-from src.ShadowRemoval import remove_shadow_grey
-from src.FaceAlignment import face_alignment
-from src.DataBase import DataBase
-from src.recognition import Recognition
-from src.contamination_scanner import ContaminationScanner
-from src.attendant_graph import AttendantGraph, Arrange
-from src.studentSorter import Student
-from tabulate import tabulate
 
-warnings.filterwarnings("ignore")
+from src import general
+from src import ui_popupLite  # for setting popup
+from src import ui_popup2  # for infobox popup
+from src.DataBase import DataBase
+from src.FaceAlignment import face_alignment
+from src.ShadowRemoval import remove_shadow_grey
+from src.attendant_graph import AttendantGraph, Arrange
 from src.centroidtracker import CentroidTracker
+from src.general import Color, get_from_percent, RepeatedTimer
+from src.init_name import name_information_init, init_shared
+from src.recognition import Recognition
+from src.scrollbar_style import scrollbar_style
+from src.studentSorter import Student
+
+try:
+    from picamera2 import Picamera2
+except ImportError:
+    pass
+
 
 # -----------------setting-----------------
 try:
@@ -86,6 +84,7 @@ if __name__ == "__main__":
             os.mkdir(folder_path)
 
     name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
+    init_shared(setting["face_reg_path"], setting["cache_path"], certificate_path=setting["db_cred_path"])
     # remove_expire_unknown_faces(setting["face_reg_path"])
     # ContaminationScanner(setting["face_reg_path"], .65).scan()
     # ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
@@ -546,6 +545,7 @@ class App(QWidget):
         self.id_navigation = {}
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = setting["db_path"]
+        self.storage = self.db.Storage(cache=setting.get("cache_path"))
         parent.setWindowTitle("GoodFaceRecognition")
         parent.resize(672, 316)
         parent.setStyleSheet("background-color: #0b1615;")
@@ -557,7 +557,7 @@ class App(QWidget):
         sizePolicy.setHeightForWidth(self.image_label.sizePolicy().hasHeightForWidth())
         self.image_label.setSizePolicy(sizePolicy)
         self.image_label.setMaximumWidth(int(2 * parent.width() / 3))
-        self.image_label.setMinimumWidth(480 / 4)
+        self.image_label.setMinimumWidth(int(480 / 4))
 
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
@@ -642,7 +642,7 @@ class App(QWidget):
         Thread(target=os.system, args=(f"python {setting['project_path'] + '/FaceDataManager.py'}",)).start()
 
     def handle_dialog(self):
-        dlg = ui_popup.Ui_Dialog(self, default_setting=setting, image=deepcopy(now_frame))
+        dlg = ui_popupLite.Ui_Dialog(self, default_setting=setting, image=deepcopy(now_frame))
 
         if dlg.exec():
             print("Success!")
@@ -876,10 +876,10 @@ class App(QWidget):
     def __load_image_passive(self, index: int = None, imageBox: QWidget = None, ID: str = None):
         if imageBox is None and index is not None:
             imageBox = self.id_navigation[index]["img_box"]
-            load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(self.info_boxes_ID[index])
+            load_image = self.storage.smart_get_image(self.info_boxes_ID[index])
 
         elif index is None:
-            load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(ID)
+            load_image = self.storage.smart_get_image(ID)
 
         else:
             load_image = unknown_image
@@ -1081,5 +1081,5 @@ if __name__ == "__main__":
     a = App(MainWindow)
     MainWindow.show()
 
-    RepeatedTimer(60 * 10, lambda: ct.recognizer.update(a.db))
+    RepeatedTimer(60 * 10, lambda: ct.recognizer.update(a.storage))
     sys.exit(app.exec_())

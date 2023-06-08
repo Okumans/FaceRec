@@ -20,6 +20,7 @@ import mediapipe as mp
 from tabulate import tabulate
 from src.ShadowRemoval import remove_shadow_grey
 import google
+from uuid import uuid4
 
 
 def get_all_filename(data_path) -> list:
@@ -33,13 +34,21 @@ def get_all_filename(data_path) -> list:
 
 
 class Recognition:
+    unknown = "UNKNOWN??"
+
     class ProcessedFace:
-        def __init__(self, filename, auto_save=False):
+        def __init__(self, filename, auto_save=False, create_file_if_not_found=False, **kwargs):
             self.filename = filename
             self.IDD: str = ""
             self.data: List[np.ndarray] = []
             self.VER = 1
             self.__auto_save = auto_save
+
+            if create_file_if_not_found:
+                self.IDD = ("unknown:" if kwargs.get("unknown") is not None else "") + \
+                           (kwargs.get("IDD") if kwargs.get("IDD") is not None else str(uuid4().hex))
+                self.save()
+
             self.open()
 
         def open(self):
@@ -78,6 +87,10 @@ class Recognition:
         def amount(self) -> int:
             return len(self.data)
 
+        @property
+        def is_unknown(self):
+            return self.IDD.startswith("unknown:")
+
         def to_dict(self) -> Dict:
             return {"id": self.IDD, "data": self.data}
 
@@ -103,7 +116,18 @@ class Recognition:
             self.processed_faces.extend(process_pool.processed_faces)
 
         def add_processed_face(self, process_face: Recognition.ProcessedFace):
-            self.processed_faces.append(process_face)
+            if process_face.IDD in self.get_identities():
+                self.processed_faces[self.index(process_face.IDD)].add_raw_encodings(process_face.data)
+            else:
+                self.processed_faces.append(process_face)
+
+        def get_encoding(self, IDD):
+            return self.processed_faces[self.index(IDD)]
+
+        def index(self, IDD):
+            for i, pf in enumerate(self.processed_faces):
+                if pf.IDD == IDD:
+                    return i
 
         def face_recognition(self, ref: List[np.ndarray], tolerance=0.4) -> Tuple[str, float]:
             avg: Dict[str, general.Average] = {}
@@ -122,7 +146,10 @@ class Recognition:
             for i in sorted_identities:
                 print(i[0], ": ", i[1].get())
 
-            return sorted_identities[0][0], sorted_identities[0][1].get()
+            try:
+                return sorted_identities[0][0], sorted_identities[0][1].get()
+            except IndexError:
+                return Recognition.unknown, 0
 
         def generator(self) -> collections.Iterable[Recognition.ProcessedFace]:
             for i in self.processed_faces:
@@ -130,15 +157,12 @@ class Recognition:
 
     def __init__(self, data_path, remember=False, name_map_path=None):
         self.processed_faces: Recognition.ProcessedFacePool
-
         self.name_map: dict[str, str] = {}
         self.name_map_path: str = name_map_path
-
         self.face_detection_method: str = "hog"
         self.min_confidence: float = 0.5
         self.num_jitters = 2
         self.remember: bool = remember
-        self.unknown: str = "UNKNOWN??"
         self.data_path = data_path
 
         if self.name_map_path is not None:

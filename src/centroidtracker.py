@@ -273,7 +273,7 @@ class CentroidTracker:
                         if i in self.recognizer.processed_faces.get_identities() and not i.startswith("unknown:"):
                             try:
                                 processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
-                                    self.faceRecPath + r"/known/" + i + ".pkl")
+                                    self.faceRecPath + r"/known/" + i + ".pkl", create_file_if_not_found=True)
                                 processed_face.add_raw_encodings(unknown_face_encodings[i])
                                 processed_face.save()
                                 self.recognizer.processed_faces.add_processed_face(processed_face)
@@ -286,10 +286,15 @@ class CentroidTracker:
                                 information[i] = f"บุคคลปริศนา [{i.split(':')[1]}]"
 
                             processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
-                                self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl")
+                                self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl",
+                                create_file_if_not_found=True,
+                                unknown=True,
+                                IDD=i.split(":")[1]
+                            )
                             processed_face.add_raw_encodings(unknown_face_encodings[i])
                             processed_face.save()
                             self.recognizer.name_map[i] = information[i]
+                            self.recognizer.processed_faces.add_processed_face(processed_face)
                             self.pre_face_encodings.delete.remote(i)
 
                     dump_information = dumps(information)

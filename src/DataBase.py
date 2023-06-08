@@ -90,16 +90,16 @@ class DataBase:
         def get_image_link(self, ID):
             return self.bucket.blob(ID).generate_signed_url(timedelta(seconds=300), method='GET')
 
-        def add_encoding(self, ID, encoding: str):
-            self.bucket.blob("encoded/" + ID).upload_from_string(encoding.encode(encoding="unicode_escape"),
+        def add_encoding(self, ID, encoding: str, prefix_path="encoded/"):
+            self.bucket.blob(prefix_path + ID).upload_from_string(encoding.encode(encoding="unicode_escape"),
                                                                  content_type="application/octet-stream")
 
-        def add_encoding_file(self, ID, filename):
-            self.bucket.blob("encoded/" + ID).upload_from_filename(filename)
+        def add_encoding_file(self, ID, filename, prefix_path="encoded/"):
+            self.bucket.blob(prefix_path + ID).upload_from_filename(filename)
 
-        def get_encoding(self, ID):
+        def get_encoding(self, ID, prefix_path="encoded/"):
             if self.internet:
-                blob = self.bucket.get_blob("encoded/" + ID)
+                blob = self.bucket.get_blob(prefix_path + ID)
                 if blob is None or blob is False:
                     return
                 data = blob.download_as_string()
@@ -108,8 +108,8 @@ class DataBase:
         def delete(self, IDD):
             self.bucket.delete_blob(IDD)
 
-        def delete_encoding(self, IDD):
-            self.bucket.delete_blob("encoded/" + IDD)
+        def delete_encoding(self, IDD, prefix_path="encoded/"):
+            self.bucket.delete_blob(prefix_path + IDD)
 
     @staticmethod
     def check_certificate(certificate_path):
