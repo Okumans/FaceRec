@@ -50,7 +50,7 @@ from src import ui_popup  # for setting popup
 from src import ui_popup2  # for infobox popup
 from src import general
 from src.scrollbar_style import scrollbar_style
-from src.init_name import name_information_init, remove_expire_unknown_faces
+from src.init_name import name_information_init, remove_expire_unknown_faces, init_shared
 from src.general import Color, get_from_percent, RepeatedTimer
 from src.ShadowRemoval import remove_shadow_grey
 from src.FaceAlignment import face_alignment
@@ -75,7 +75,7 @@ except FileNotFoundError:
 use_folder = [setting['project_path'], setting["face_reg_path"], setting["face_reg_path"] + r"/unknown",
               setting["face_reg_path"] + r"/known", setting['project_path'] + r"/cache"]
 
-RAY_TIMEOUT = 0.005
+RAY_TIMEOUT = 0.008
 
 # -------------global variable--------------
 if __name__ == "__main__":
@@ -87,10 +87,11 @@ if __name__ == "__main__":
         if not path.exists(folder_path):
             os.mkdir(folder_path)
 
+    init_shared(setting["face_reg_path"], setting["cache_path"], certificate_path=setting["db_cred_path"])
     name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
+
     # remove_expire_unknown_faces(setting["face_reg_path"])
     # ContaminationScanner(setting["face_reg_path"], .65).scan()
-    # ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
 
     mp_face_detection = mp.solutions.face_detection
     mp_face_mesh = mp.solutions.face_mesh
@@ -105,7 +106,7 @@ if __name__ == "__main__":
         remember_unknown_face=setting["remember_unknown_face"],
         otherSetting=setting,
     )
-    ct.recognizer.face_detection_method = "hog"
+    ct.recognizer.face_detection_method = "mp"
     (H, W) = (None, None)
     text_color = (31, 222, 187)
     prev_frame_time = 0  # fps counter
@@ -545,14 +546,16 @@ class VideoThread(QThread):
 
                     fps = int(1 / total_time) if total_time != 0 else -1
 
-                    cv2.putText(
+                    general.putBorderText(
                         image,
                         str(fps),
                         (7, 70),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         2,
                         (100, 255, 0),
+                        Color.Black,
                         3,
+                        4,
                         cv2.LINE_AA,
                     )
                 else:
@@ -591,7 +594,8 @@ class App(QWidget):
         self.id_navigation = {}
         self.db = DataBase("Students", sync_with_offline_db=True)
         self.db.offline_db_folder_path = setting["db_path"]
-        parent.setWindowTitle("Qt live label demo")
+        self.storage = self.db.Storage(cache=setting.get("cache_path"))
+        parent.setWindowTitle("GoodFaceRecognition")
         parent.resize(1336, 553)
         parent.setStyleSheet("background-color: #0b1615;")
 
@@ -602,7 +606,7 @@ class App(QWidget):
         sizePolicy.setHeightForWidth(self.image_label.sizePolicy().hasHeightForWidth())
         self.image_label.setSizePolicy(sizePolicy)
         self.image_label.setMaximumWidth(int(2 * parent.width() / 3))
-        self.image_label.setMinimumWidth(480 / 2)
+        self.image_label.setMinimumWidth(int(480 / 2))
 
         self.image_label.setStyleSheet(
             "color: rgb(240, 240, 240);\n"
@@ -923,10 +927,10 @@ class App(QWidget):
     def __load_image_passive(self, index: int = None, imageBox: QWidget = None, ID: str = None):
         if imageBox is None and index is not None:
             imageBox = self.id_navigation[index]["img_box"]
-            load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(self.info_boxes_ID[index])
+            load_image = self.storage.smart_get_image(self.info_boxes_ID[index])
 
         elif index is None:
-            load_image = self.db.Storage(cache=setting["cache_path"]).smart_get_image(ID)
+            load_image = self.storage.smart_get_image(ID)
 
         else:
             load_image = unknown_image
@@ -1016,6 +1020,7 @@ class App(QWidget):
 
                     if len(self.info_boxes_ID) > index:
                         if self.info_boxes_ID[index] is not False:
+                            print("loading image")
                             Thread(target=lambda: self.__load_image_passive(index)).start()
 
             animation.start()
@@ -1048,7 +1053,7 @@ class App(QWidget):
         if self.info_boxes.get(ID) is None:
             self.info_boxes[ID] = True
             self.verticalLayout.removeItem(self.spacer)
-            img_box, message_box, layout = self.new_info_box(f"<font size=8><b>ค้นหาใบหน้า</b></font>", image, ID)
+            img_box, message_box, layout = self.new_info_box(f"<font size=8><b>Finding face..</b></font>", image, ID)
             self.id_navigation[ID] = {"img_box": img_box, "message_box": message_box}
             self.verticalLayout.addLayout(layout)
 
@@ -1128,5 +1133,5 @@ if __name__ == "__main__":
     a = App(MainWindow)
     MainWindow.show()
 
-    RepeatedTimer(60 * 10, lambda: ct.recognizer.update(a.db))
+    RepeatedTimer(60 * 10, lambda: ct.recognizer.update(a.storage))
     sys.exit(app.exec_())

@@ -161,7 +161,7 @@ class Recognition:
         self.name_map_path: str = name_map_path
         self.face_detection_method: str = "hog"
         self.min_confidence: float = 0.5
-        self.num_jitters = 2
+        self.num_jitters = 1
         self.remember: bool = remember
         self.data_path = data_path
 
@@ -269,13 +269,11 @@ class Recognition:
                     y_min = detection.location_data.relative_bounding_box.ymin * H
                     x_max = x_min + detection.location_data.relative_bounding_box.width * W
                     y_max = y_min + detection.location_data.relative_bounding_box.height * H
-                    face_height = y_max - y_min
-                    face_width = x_max - x_min
                     box = (
-                        int(x_min) + get_from_percent(face_width, 10),
-                        int(y_min) + get_from_percent(face_height, 10),
-                        int(x_max) - get_from_percent(face_width, 10),
-                        int(y_max) - get_from_percent(face_height, 10),
+                        int(y_min),
+                        int(x_max),
+                        int(y_max),
+                        int(x_min),
                     )
 
                     face_location = [box]
@@ -303,6 +301,6 @@ class Recognition:
 
         print(f"recognized: {name}")
         if name == self.unknown and self.remember:
-            return (name, 1 - best_match_value), new_encoding
+            return (name, 0.3), new_encoding
 
         return (name, 1 - best_match_value), new_encoding

@@ -1,6 +1,8 @@
 import datetime
 from pprint import pprint
 
+import google.cloud.storage.blob
+import google.api_core.exceptions
 from PyQt5 import QtGui
 from PyQt5.QtWidgets import (
     QWidget,
@@ -377,6 +379,10 @@ class App(QMainWindow):
         if con == QMessageBox.Yes:
             if not self.created_face_not_saved.get(ID):
                 remove(self.face_data_info_loaded[ID]["path"])
+                try:
+                    self.storage.delete_encoding(ID, prefix_path="shared/")
+                except google.api_core.exceptions.NotFound:
+                    print(f"{ID} not found in storage")
                 self.db.delete(ID)
                 del self.face_data_info_loaded[ID]
 

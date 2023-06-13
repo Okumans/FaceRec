@@ -52,7 +52,7 @@ class CentroidTracker:
         self.minFaceBlur = minFaceBlur
         self.faceCheckAmount = faceCheckAmount
         self.remember_unknown_face = remember_unknown_face
-        self.remember_unknown_face_maximum_confidence = 0.48
+        self.remember_unknown_face_maximum_confidence = 0.4
         self.liveness_threshold = .50
         self.liveness_check = otherSetting["liveness_detection"]
         self.last_deregister = general.rayDict.remote()
@@ -98,6 +98,7 @@ class CentroidTracker:
             names[name].append(recognition_confidence)
             self.recognition_progress.set.remote(objectID, j / object_amount)
         most_common = general.Most_Common(names)
+        print(names)
 
         if most_common["name"] is None:
             print("bro! mostcommon is None")
@@ -112,7 +113,7 @@ class CentroidTracker:
             check_name = most_common["name"]
             if most_common["name"] == self.recognizer.unknown and self.remember_unknown_face:
                 generate_name = f"unknown:{str(uuid4().hex)}"
-                print(f"generated: {generate_name}")
+                print(f"generated: {generate_name}", most_common["confidence"])
                 if self.remember_unknown_face_maximum_confidence >= most_common["confidence"]:
                     self.pre_face_encodings.set.remote(generate_name, encodings)
                     check_name = generate_name
@@ -273,17 +274,19 @@ class CentroidTracker:
                         if i in self.recognizer.processed_faces.get_identities() and not i.startswith("unknown:"):
                             try:
                                 processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
-                                    self.faceRecPath + r"/known/" + i + ".pkl", create_file_if_not_found=True)
+                                    self.faceRecPath + r"/known/" + i + ".pkl")
                                 processed_face.add_raw_encodings(unknown_face_encodings[i])
                                 processed_face.save()
                                 self.recognizer.processed_faces.add_processed_face(processed_face)
                                 self.pre_face_encodings.delete.remote(i)
-                            except (FileNotFoundError, KeyError):
+                                print("not error", i)
+                            except (FileNotFoundError, KeyError) as e:
+                                print("error yoyo", e)
                                 pass
                         else:
                             # i is "unknown:[<ID>]" but : cannot be in filename
                             if i not in self.recognizer.processed_faces.get_identities():
-                                information[i] = f"บุคคลปริศนา [{i.split(':')[1]}]"
+                                information[i] = f"mystery person [{i.split(':')[1]}]"
 
                             processed_face: Recognition.ProcessedFace = Recognition.ProcessedFace(
                                 self.faceRecPath + r"/unknown/" + i.split(":")[1] + ".pkl",
@@ -291,6 +294,7 @@ class CentroidTracker:
                                 unknown=True,
                                 IDD=i.split(":")[1]
                             )
+                            print("add", information[i], "save nono")
                             processed_face.add_raw_encodings(unknown_face_encodings[i])
                             processed_face.save()
                             self.recognizer.name_map[i] = information[i]

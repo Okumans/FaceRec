@@ -5,7 +5,7 @@ import numpy as np
 from src.DataBase import DataBase
 from typing import Any
 import os.path as path
-from src.general import Average
+from src.general import Average, msg_box
 
 
 class ContaminationScanner:
@@ -23,7 +23,7 @@ class ContaminationScanner:
                 ID: str = raw_information["id"]
                 data: list[np.ndarray] = raw_information["data"]
 
-                print(f"\rSCANNING QUALIFY{path.basename(file)}", end="")
+                print(f"\rSCANNING QUALIFY {path.basename(file)}", end="")
                 new_data: list[np.ndarray] = []
                 for dat in data:
                     similarity = 1 - (sum(face_distance(data, dat)) / len(data))

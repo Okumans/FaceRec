@@ -55,6 +55,7 @@ from src.init_name import name_information_init, init_shared
 from src.recognition import Recognition
 from src.scrollbar_style import scrollbar_style
 from src.studentSorter import Student
+from src.contamination_scanner import ContaminationScanner
 
 try:
     from picamera2 import Picamera2
@@ -84,9 +85,9 @@ if __name__ == "__main__":
             os.mkdir(folder_path)
 
     name_information_init(setting["face_reg_path"], setting["name_map_path"], certificate_path=setting["db_cred_path"])
-    init_shared(setting["face_reg_path"], setting["cache_path"], certificate_path=setting["db_cred_path"])
+    # init_shared(setting["face_reg_path"], setting["cache_path"], certificate_path=setting["db_cred_path"])
     # remove_expire_unknown_faces(setting["face_reg_path"])
-    # ContaminationScanner(setting["face_reg_path"], .65).scan()
+    ContaminationScanner(setting["face_reg_path"], .65).scan()
     # ContaminationScanner(setting["face_reg_path"], .8).scan_duplicate()
 
     mp_face_detection = mp.solutions.face_detection
@@ -153,8 +154,11 @@ class VideoThread(QThread):
         with mp_face_detection.FaceDetection(min_detection_confidence=setting["min_detection_confidence"],
                                              model_selection=1) as face_detection:
             while self.run or self.cap.isOpened():
-                # success, image = True, self.cap.capture_array()
-                success, image = self.cap.read()
+                if setting.get("platform", "win") == "win":
+                    success, image = self.cap.read()
+                elif setting.get("platform", "win") == "rpi":
+                    success, image = True, self.cap.capture_array()
+
                 new_frame_time = time.time()
 
                 if not success or image is None:

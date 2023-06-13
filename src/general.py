@@ -23,6 +23,48 @@ import time
 import threading
 
 
+class MessageIO:
+    @staticmethod
+    def ask(message: str, input_type: Callable) -> Any:
+        print_msg_box(message)
+        return input_type(input(": "))
+
+    @staticmethod
+    def show(message: str):
+        print_msg_box(message)
+
+    @staticmethod
+    def choice(message: str, choices: List, ignore_case=False) -> str:
+        data = msg_box(message) + "\n"
+        for i in choices:
+            data += f"   ◆ {i}\n"
+        print_msg_box(data)
+
+        ch = input(": ")
+        choices = list(map(lambda a: a.lower(), choices)) if ignore_case is True else choices
+        while (ch.strip() if ignore_case is False else ch.strip().lower()) not in choices:
+            ch = input(": ")
+        return ch
+
+    @staticmethod
+    def ask_y_n(message: str, ignore_case=False, return_boolean=False, upper_y=False):
+        print_msg_box(message + " (y/n)")
+        ch = input(": ")
+        choices = ("y", "n") if upper_y is False else ("Y", "n")
+        while (ch.strip() if ignore_case is False else ch.strip().lower()) not in choices:
+            ch = input(": ")
+        return (ch == ("y" if upper_y is False else "Y")) if return_boolean is True else ch
+
+    @staticmethod
+    def ask_until_sure(message: str, input_type: Callable):
+        ans: str = ""
+        sure: bool = False
+        while not sure:
+            ans = MessageIO.ask(message, str)
+            sure = MessageIO.ask_y_n(f"are you sure? [{ans}]", ignore_case=True, return_boolean=True)
+        return input_type(ans)
+
+
 class AnimateProgressBar(QProgressBar):
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -118,8 +118,8 @@ class DataBase:
             firebase_admin.initialize_app(
                 cred,
                 {
-                    "databaseURL": "https://facerec-24eea-default-rtdb.asia-southeast1.firebasedatabase.app",
-                    "storageBucket": "facerec-24eea.appspot.com",
+                    "databaseURL": "https://facerecamerica-default-rtdb.firebaseio.com",
+                    "storageBucket": "facerecamerica.appspot.com",
                 },
             )
 
