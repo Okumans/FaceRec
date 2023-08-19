@@ -48,8 +48,8 @@ from shutil import move
 from uuid import uuid4
 from threading import Thread
 import pickle
-
-
+import json
+    
 class App(QMainWindow):
     def resizeEvent(self, event):
         self.add_button.move(self.size().width() - 120, self.size().height() - 120)
@@ -58,7 +58,7 @@ class App(QMainWindow):
     def __init__(self, target_directory: str):
         super().__init__()
         self.target_directory = target_directory
-        self.db = DataBase("Students", certificate_path=path.dirname(__file__)+"/src/resources/serviceAccountKey.json")
+        self.db = DataBase("Students", certificate_path=setting["db_cred_path"])
         self.db.offline_db_folder_path = self.target_directory
         self.storage = self.db.Storage(cache=CACHE_PATH)
         self.result = {}
@@ -481,7 +481,10 @@ class App(QMainWindow):
             self.face_data_info_loaded[ID] = self.face_data_info_loaded[ID_old]
             del self.id_navigation[ID_old]
             del self.face_data_info_loaded[ID_old]
-            del self.created_face_not_saved[ID_old]
+            try:
+                del self.created_face_not_saved[ID_old]
+            except KeyError:
+                print(f"{ID_old} is already deleted")
             self.id_navigation[ID]["message_box"].setText(
                 f"<font size=8><b>{ID} " f"[{self.face_data_info_loaded[ID]['data_amount']}]</font>"
             )
@@ -751,6 +754,11 @@ class App(QMainWindow):
         )
         box.setText(_translate("MainWindow", message))
         box.setTextFormat(Qt.RichText)
+        fontl = QFont()
+        fontl.setFamily("Kanit")
+        fontl.setPointSize(10)
+        fontl.setBold(True)
+        box.setFont(fontl);
         box.mousePressEvent = lambda _: self.info_box_popup(ID)
         img_box = QLabel(self.scrollAreaWidgetContents)
         sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
@@ -786,6 +794,14 @@ def importer():
 
 
 if __name__ == "__main__":
+    # -----------------setting-----------------
+    try:
+        with open("settings.json", "r") as f:
+            setting = json.load(f)
+    except FileNotFoundError:
+        print("setting not found!, please run setup.py first.")
+        quit()
+        
     CACHE_PATH = path.dirname(__file__) + "/cache"
     preload_face_reg_model = False
     # True: load model before starting program -> use a lot of memory bet best for training new face

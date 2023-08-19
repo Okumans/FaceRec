@@ -1,7 +1,36 @@
-import google.cloud.storage.blob
-import src.triple_gems
-import warnings
-from PyQt5 import QtGui, QtMultimedia, QtMultimediaWidgets
+import json
+import logging
+import os
+import os.path as path
+import sys
+import time
+from copy import deepcopy
+from datetime import datetime
+from json import dumps, loads
+from threading import Thread
+from typing import *
+from mss import mss
+from pyautogui import size
+import cv2
+import mediapipe as mp
+import numpy as np
+
+import ray
+from ray.exceptions import GetTimeoutError
+
+from PyQt5 import QtGui
+from PyQt5.QtCore import (
+    pyqtSignal,
+    pyqtSlot,
+    Qt,
+    QThread,
+    QSize,
+    QRect,
+    QCoreApplication,
+    QVariantAnimation,
+    pyqtBoundSignal,
+)
+from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QWidget,
     QApplication,
@@ -15,54 +44,21 @@ from PyQt5.QtWidgets import (
     QBoxLayout,
     QSplitter
 )
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtCore import (
-    pyqtSignal,
-    pyqtSlot,
-    Qt,
-    QThread,
-    QSize,
-    QRect,
-    QCoreApplication,
-    QVariantAnimation,
-    pyqtBoundSignal,
-)
 
-import sys
-import numpy as np
-import time
-from copy import deepcopy
-from datetime import datetime
-from pyautogui import size
-import os.path as path
-import os
-import cv2
-import ray
-from ray.exceptions import GetTimeoutError
-import mediapipe as mp
-from mss import mss
-from threading import Thread
-from json import dumps, loads, decoder
-import json
-from typing import *
-import logging
+from src import general
 from src import ui_popup  # for setting popup
 from src import ui_popup2  # for infobox popup
-from src import general
-from src.scrollbar_style import scrollbar_style
-from src.init_name import name_information_init, remove_expire_unknown_faces, init_shared
-from src.general import Color, get_from_percent, RepeatedTimer
-from src.ShadowRemoval import remove_shadow_grey
-from src.FaceAlignment import face_alignment
 from src.DataBase import DataBase
-from src.recognition import Recognition
-from src.contamination_scanner import ContaminationScanner
+from src.FaceAlignment import face_alignment
+from src.ShadowRemoval import remove_shadow_grey
 from src.attendant_graph import AttendantGraph, Arrange
+from src.general import Color, get_from_percent, RepeatedTimer
+from src.init_name import name_information_init, init_shared
+from src.recognition import Recognition
+from src.scrollbar_style import scrollbar_style
 from src.studentSorter import Student
-from tabulate import tabulate
-
-warnings.filterwarnings("ignore")
 from src.centroidtracker import CentroidTracker
+
 
 # -----------------setting-----------------
 try:
@@ -391,10 +387,10 @@ class VideoThread(QThread):
                                 ct.last_deregister.delete.remote(i)
 
                                 if name != ct.recognizer.unknown and not name.startswith("attacked:"):
-                                    data = self.db.get_data(name)
+                                    data = self.db.quick_get_data(name)
                                     if data is None:
                                         self.db.add_data(name, *DataBase.default)
-                                        data = self.db.get_data(name)
+                                        data = self.db.quick_get_data(name)
 
                                     now_time = time.time()
                                     graph_info = data.get("graph_info") if data.get("graph_info") is not None else []

@@ -512,10 +512,10 @@ def make_dpi_aware():
 
 
 def scan_files(directory: str, extension: str = ".pkl") -> List[str]:
-    def dfs(_directory: str, _file_type: str) -> List:
+    def dfs(_directory: str, _file_type: str) -> List[str]:
         if path.isdir(_directory):
-            _files: list[str] = []
-            for _file in glob.glob(_directory + "\\*"):
+            _files: List[str] = []
+            for _file in glob.glob(path.join(_directory, "*")):
                 _files.extend(dfs(_file, _file_type))
             return _files
         else:

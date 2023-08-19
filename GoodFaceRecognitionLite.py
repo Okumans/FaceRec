@@ -1083,7 +1083,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     MainWindow = QMainWindow()
     a = App(MainWindow)
-    MainWindow.show()
+    MainWindow.showFullScreen()
 
     RepeatedTimer(60 * 10, lambda: ct.recognizer.update(a.storage))
     sys.exit(app.exec_())

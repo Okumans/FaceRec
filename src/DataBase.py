@@ -1,4 +1,5 @@
 import shelve
+import threading
 from typing import *
 import warnings
 import google_auth_httplib2
@@ -118,8 +119,8 @@ class DataBase:
             firebase_admin.initialize_app(
                 cred,
                 {
-                    "databaseURL": "https://facerecamerica-default-rtdb.firebaseio.com",
-                    "storageBucket": "facerecamerica.appspot.com",
+                    "databaseURL": "https://facerec-24eea-default-rtdb.asia-southeast1.firebasedatabase.app",
+                    "storageBucket": "facerec-24eea.appspot.com",
                 },
             )
 
@@ -227,6 +228,69 @@ class DataBase:
                 self.ref.child(key).set(values)
             self.ref.child("last_update").set(update_time)
 
+    def quick_add_data(
+            self,
+            ID: str,
+            realname: str,
+            surname: str,
+            nickname: str,
+            student_id: int,
+            student_class: str,
+            class_number: int,
+            active_days: int,
+            last_checked: int,
+            graph_info: list,
+            **kwargs
+    ):
+        # update database
+        print(f"database add {ID}.")
+        data = {
+            ID: {
+                "realname": realname,
+                "surname": surname,
+                "nickname": nickname,
+                "student_id": student_id,
+                "student_class": student_class,
+                "class_number": class_number,
+                "active_days": active_days,
+                "last_checked": last_checked,
+                "graph_info": graph_info,
+                "last_update": 0,
+                **kwargs,
+            }
+        }
+        update_time = time.time()
+        if self.sync_with_offline_db:
+            with shelve.open(self.offline_db_folder_path + "/" + self.db_name) as off_db:
+                for key, values in data.items():
+                    off_db[key] = values
+                off_db["last_update"] = update_time
+
+            def __update(dat):
+                for k, v in dat.items():
+                    try:
+                        self.ref.child(key).set(values)
+                        self.ref.child("last_update").set(update_time)
+                    except google_auth_httplib2.exceptions.TransportError:
+                        print("updating error:", k)
+                print("finish quick updated...")
+
+            threading.Thread(target=lambda: __update(data)).start()
+
+        else:
+            print("cannot use quick update (offline database not enabled)")
+            self.add_data(ID,
+                          realname,
+                          surname,
+                          nickname,
+                          student_id,
+                          student_class,
+                          class_number,
+                          active_days,
+                          last_checked,
+                          graph_info,
+                          **kwargs)
+
     def quick_get_data(self, ID: str) -> Dict:
         if not self.sync_with_offline_db:
             warnings.warn("sync_with_offline_db is not turned on.")
@@ -271,6 +335,30 @@ class DataBase:
                 values[key] = value
             self.ref.child(ID).update(values)
             self.ref.child("last_update").set(update_time)
+
+    def quick_update(self, ID: str, **data):
+        update_time = time.time()
+        if self.sync_with_offline_db:
+            with shelve.open(self.offline_db_folder_path + "/" + self.db_name) as off_db:
+                values = self.get_data(ID)
+                for key, value in data.items():
+                    values[key] = value
+
+                off_db[ID] = values
+
+                def __update_temp():
+                    try:
+                        self.ref.child(ID).update(values)
+                        self.ref.child("last_update").set(update_time)
+                    except google_auth_httplib2.exceptions.TransportError:
+                        print("updating error:", ID)
+                    print("finish quick updated...")
+
+                threading.Thread(target=__update_temp).start()
+
+                off_db["last_update"] = update_time
+        else:
+            self.update(ID, **data)
 
     def delete(self, ID):
         print(f"database deleted {ID}.")
