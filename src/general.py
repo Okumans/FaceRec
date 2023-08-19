@@ -8,7 +8,6 @@ from PyQt5.QtWidgets import QProgressBar
 from PyQt5.QtCore import Qt
 import cv2
 import os.path as path
-from collections import Iterable
 from PIL import Image, ImageStat, ImageEnhance, ImageDraw, ImageFont
 import math
 import numpy as np

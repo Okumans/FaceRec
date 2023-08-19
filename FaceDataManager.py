@@ -390,7 +390,10 @@ class App(QMainWindow):
             self.unload_data()
 
             del self.id_navigation[ID]
-            del self.created_face_not_saved[ID]
+            try:
+                del self.created_face_not_saved[ID]
+            except KeyError:
+                print(f"{ID} is already deleted")
 
     def unload_data(self):
         self.current = ""
