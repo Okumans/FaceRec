@@ -9,3 +9,9 @@ src/test-1.py
 src/test.py
 src/train_data_angle.py
 *.bat
+cache/
+settings.json
+__pycache__/
+.idea/
+**/__pycache__/
+recognition_resources/
